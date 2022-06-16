@@ -7,6 +7,7 @@ import { Comment } from 'common/comment'
 import { Contract, FreeResponseContract } from 'common/contract'
 import { User } from 'common/user'
 import { mapCommentsByBetId } from 'web/lib/firebase/comments'
+import { CommentTipMap, CommentTips } from 'web/hooks/use-tip-txns'
 
 export type ActivityItem =
   | DescriptionItem
@@ -52,6 +53,7 @@ export type BetItem = BaseActivityItem & {
 export type CommentItem = BaseActivityItem & {
   type: 'comment'
   comment: Comment
+  tips: CommentTips
   betsBySameUser: Bet[]
   probAtCreatedTime?: number
   truncate?: boolean
@@ -62,6 +64,7 @@ export type CommentThreadItem = BaseActivityItem & {
   type: 'commentThread'
   parentComment: Comment
   comments: Comment[]
+  tips: CommentTipMap
   bets: Bet[]
 }
 
@@ -99,6 +102,7 @@ const ABBREVIATED_NUM_COMMENTS_OR_BETS_TO_SHOW = 3
 function groupBets(
   bets: Bet[],
   comments: Comment[],
+  tips: CommentTipMap,
   contract: Contract,
   userId: string | undefined,
   options: {
@@ -137,6 +141,7 @@ function groupBets(
           type: 'comment' as const,
           id: bet.id,
           comment,
+          tips: tips[comment.id],
           betsBySameUser: [bet],
           contract,
           truncate: abbreviated,
@@ -287,6 +292,7 @@ function getAnswerAndCommentInputGroups(
 function groupBetsAndComments(
   bets: Bet[],
   comments: Comment[],
+  tips: CommentTipMap,
   contract: Contract,
   userId: string | undefined,
   options: {
@@ -305,12 +311,13 @@ function groupBetsAndComments(
       id: comment.id,
       contract: contract,
       comment,
+      tips: tips[comment.id],
       betsBySameUser: [],
       truncate: abbreviated,
       smallAvatar,
     }))
 
-  const groupedBets = groupBets(bets, comments, contract, userId, options)
+  const groupedBets = groupBets(bets, comments, tips, contract, userId, options)
 
   // iterate through the bets and comment activity items and add them to the items in order of comment creation time:
   const unorderedBetsAndComments = [...commentsWithoutBets, ...groupedBets]
@@ -335,6 +342,7 @@ function groupBetsAndComments(
 function getCommentThreads(
   bets: Bet[],
   comments: Comment[],
+  tips: CommentTipMap,
   contract: Contract
 ) {
   const parentComments = comments.filter((comment) => !comment.replyToCommentId)
@@ -346,6 +354,7 @@ function getCommentThreads(
     comments: comments,
     parentComment: comment,
     bets: bets,
+    tips,
   }))
 
   return items
@@ -355,6 +364,7 @@ export function getAllContractActivityItems(
   contract: Contract,
   bets: Bet[],
   comments: Comment[],
+  tips: CommentTipMap,
   user: User | null | undefined,
   options: {
     abbreviated: boolean
@@ -390,6 +400,7 @@ export function getAllContractActivityItems(
       ...groupBetsAndComments(
         onlyUsersBetsOrBetsWithComments,
         comments,
+        tips,
         contract,
         user?.id,
         {
@@ -402,7 +413,7 @@ export function getAllContractActivityItems(
     )
   } else {
     items.push(
-      ...groupBetsAndComments(bets, comments, contract, user?.id, {
+      ...groupBetsAndComments(bets, comments, tips, contract, user?.id, {
         hideOutcome: false,
         abbreviated,
         smallAvatar: false,
@@ -427,6 +438,7 @@ export function getRecentContractActivityItems(
   contract: Contract,
   bets: Bet[],
   comments: Comment[],
+  tips: CommentTipMap,
   user: User | null | undefined,
   options: {
     contractPath?: string
@@ -455,7 +467,7 @@ export function getRecentContractActivityItems(
     )
   } else {
     items.push(
-      ...groupBetsAndComments(bets, comments, contract, user?.id, {
+      ...groupBetsAndComments(bets, comments, tips, contract, user?.id, {
         hideOutcome: false,
         abbreviated: true,
         smallAvatar: false,
@@ -480,6 +492,7 @@ export function getSpecificContractActivityItems(
   contract: Contract,
   bets: Bet[],
   comments: Comment[],
+  tips: CommentTipMap,
   user: User | null | undefined,
   options: {
     mode: 'comments' | 'bets' | 'free-response-comment-answer-groups'
@@ -515,6 +528,7 @@ export function getSpecificContractActivityItems(
         ...getCommentThreads(
           nonFreeResponseBets,
           nonFreeResponseComments,
+          tips,
           contract
         )
       )

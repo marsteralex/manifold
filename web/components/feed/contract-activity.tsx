@@ -11,11 +11,13 @@ import {
 import { FeedItems } from './feed-items'
 import { User } from 'common/user'
 import { useContractWithPreload } from 'web/hooks/use-contract'
+import { CommentTipMap } from 'web/hooks/use-tip-txns'
 
 export function ContractActivity(props: {
   contract: Contract
   bets: Bet[]
   comments: Comment[]
+  tips: CommentTipMap
   user: User | null | undefined
   mode:
     | 'only-recent'
@@ -28,7 +30,7 @@ export function ContractActivity(props: {
   className?: string
   betRowClassName?: string
 }) {
-  const { user, mode, contractPath, className, betRowClassName } = props
+  const { user, mode, tips, contractPath, className, betRowClassName } = props
 
   const contract = useContractWithPreload(props.contract) ?? props.contract
 
@@ -43,17 +45,17 @@ export function ContractActivity(props: {
   const bets = (updatedBets ?? props.bets).filter((bet) => !bet.isRedemption)
   const items =
     mode === 'only-recent'
-      ? getRecentContractActivityItems(contract, bets, comments, user, {
+      ? getRecentContractActivityItems(contract, bets, comments, tips, user, {
           contractPath,
         })
       : mode === 'comments' ||
         mode === 'bets' ||
         mode === 'free-response-comment-answer-groups'
-      ? getSpecificContractActivityItems(contract, bets, comments, user, {
+      ? getSpecificContractActivityItems(contract, bets, comments, tips, user, {
           mode,
         })
       : // only used in abbreviated mode with folds/communities, all mode isn't used
-        getAllContractActivityItems(contract, bets, comments, user, {
+        getAllContractActivityItems(contract, bets, comments, tips, user, {
           abbreviated: mode === 'abbreviated',
         })
 
