@@ -18,7 +18,7 @@ import { UNIQUE_BETTOR_BONUS_AMOUNT } from '../../common/numeric-constants'
 const BONUS_START_DATE = new Date('2022-07-01T00:00:00.000Z').getTime()
 const QUERY_LIMIT_SECONDS = 60
 
-export const getdailybonuses = newEndpoint({}, async (req, auth) => {
+export const getdailybonuses = newEndpoint({}, async (_req, auth) => {
   const { user, lastTimeCheckedBonuses } = await firestore.runTransaction(
     async (trans) => {
       const userSnap = await trans.get(
@@ -32,9 +32,7 @@ export const getdailybonuses = newEndpoint({}, async (req, auth) => {
           400,
           `Limited to one query per user per ${QUERY_LIMIT_SECONDS} seconds.`
         )
-      await trans.update(userSnap.ref, {
-        lastTimeCheckedBonuses: Date.now(),
-      })
+      trans.update(userSnap.ref, { lastTimeCheckedBonuses: Date.now() })
       return {
         user,
         lastTimeCheckedBonuses,
@@ -91,12 +89,12 @@ export const getdailybonuses = newEndpoint({}, async (req, auth) => {
         uniqueBettorIdsWithBetsAfterLastResetTime.filter(
           (userId) => !uniqueBettorIdsBeforeLastResetTime.includes(userId)
         )
-      newUniqueBettorIds.length > 0 &&
+      if (newUniqueBettorIds.length === 0) {
+        return nullReturn
+      } else {
         log(
           `Got ${newUniqueBettorIds.length} new unique bettors since last bonus`
         )
-      if (newUniqueBettorIds.length === 0) {
-        return nullReturn
       }
       // Create combined txn for all unique bettors
       const bonusTxnDetails = {
