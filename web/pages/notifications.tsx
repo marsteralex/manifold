@@ -5,7 +5,6 @@ import {
   BetFillData,
   ContractResolutionData,
   Notification,
-  notification_source_types,
 } from 'common/notification'
 import { Avatar, EmptyAvatar } from 'web/components/widgets/avatar'
 import { Row } from 'web/components/layout/row'
@@ -27,7 +26,6 @@ import {
 import {
   NotificationGroup,
   useGroupedNotifications,
-  useUnseenGroupedNotification,
 } from 'web/hooks/use-notifications'
 import { TrendingUpIcon } from '@heroicons/react/outline'
 import { formatMoney } from 'common/util/format'
@@ -39,8 +37,6 @@ import {
 } from 'common/economy'
 import { groupBy, sum, uniqBy } from 'lodash'
 import { Pagination } from 'web/components/widgets/pagination'
-import { useWindowSize } from 'web/hooks/use-window-size'
-import { safeLocalStorage } from 'web/lib/util/local'
 import { SiteLink } from 'web/components/widgets/site-link'
 import { NotificationSettings } from 'web/components/notification-settings'
 import { SEO } from 'web/components/SEO'
@@ -54,6 +50,13 @@ import {
 import { Col } from 'web/components/layout/col'
 import { track } from 'web/lib/service/analytics'
 import { useRedirectIfSignedOut } from 'web/hooks/use-redirect-if-signed-out'
+import { PushNotificationsModal } from 'web/components/push-notifications-modal'
+import {
+  getSourceIdForLinkComponent,
+  getSourceUrl,
+} from 'web/lib/firebase/notifications'
+import { useIsPageVisible } from 'web/hooks/use-page-visible'
+import { useIsMobile } from 'web/hooks/use-is-mobile'
 
 export const NOTIFICATIONS_PER_PAGE = 30
 const HIGHLIGHT_CLASS = 'bg-indigo-50'
@@ -157,35 +160,32 @@ function RenderNotificationGroups(props: {
 
 function NotificationsList(props: { privateUser: PrivateUser }) {
   const { privateUser } = props
+
   const [page, setPage] = useState(0)
+  const [showPushNotificationsModal, setShowPushNotificationsModal] =
+    useState(false)
+
   const allGroupedNotifications = useGroupedNotifications(privateUser)
-  const unseenGroupedNotifications = useUnseenGroupedNotification(privateUser)
   const paginatedGroupedNotifications = useMemo(() => {
-    if (!allGroupedNotifications) return
+    if (!allGroupedNotifications) return undefined
+
     const start = page * NOTIFICATIONS_PER_PAGE
     const end = start + NOTIFICATIONS_PER_PAGE
-    const maxNotificationsToShow = allGroupedNotifications.slice(start, end)
-
-    const local = safeLocalStorage()
-    local?.setItem(
-      'notification-groups',
-      JSON.stringify(allGroupedNotifications)
-    )
-    return maxNotificationsToShow
+    return allGroupedNotifications.slice(start, end)
   }, [allGroupedNotifications, page])
 
-  // Set all notifications that don't fit on the first page to seen
+  const isPageVisible = useIsPageVisible()
+
+  // Mark all notifications as seen.
   useEffect(() => {
-    if (
-      paginatedGroupedNotifications &&
-      paginatedGroupedNotifications?.length >= NOTIFICATIONS_PER_PAGE
-    ) {
-      const allUnseenNotifications = unseenGroupedNotifications
-        ?.map((ng) => ng.notifications)
+    if (isPageVisible && paginatedGroupedNotifications) {
+      const notifications = paginatedGroupedNotifications
         .flat()
-      allUnseenNotifications && setNotificationsAsSeen(allUnseenNotifications)
+        .flatMap((g) => g.notifications)
+
+      markNotificationsAsSeen(notifications)
     }
-  }, [paginatedGroupedNotifications, unseenGroupedNotifications])
+  }, [isPageVisible, paginatedGroupedNotifications])
 
   if (!paginatedGroupedNotifications || !allGroupedNotifications)
     return <LoadingIndicator />
@@ -198,6 +198,14 @@ function NotificationsList(props: { privateUser: PrivateUser }) {
           more.
         </div>
       )}
+      <PushNotificationsModal
+        isOpen={showPushNotificationsModal}
+        setOpen={setShowPushNotificationsModal}
+        privateUser={privateUser}
+        notifications={
+          allGroupedNotifications.map((ng) => ng.notifications).flat().length
+        }
+      />
 
       <RenderNotificationGroups
         notificationGroups={paginatedGroupedNotifications}
@@ -210,8 +218,6 @@ function NotificationsList(props: { privateUser: PrivateUser }) {
             totalItems={allGroupedNotifications.length}
             setPage={setPage}
             scrollToTop
-            nextTitle={'Older'}
-            prevTitle={'Newer'}
           />
         )}
     </div>
@@ -236,10 +242,6 @@ function IncomeNotificationGroupItem(props: {
     if (event.ctrlKey || event.metaKey) return
     setExpanded(!expanded)
   }
-
-  useEffect(() => {
-    setNotificationsAsSeen(notifications)
-  }, [notifications])
 
   useEffect(() => {
     if (expanded) setHighlighted(false)
@@ -337,7 +339,7 @@ function IncomeNotificationGroupItem(props: {
       )}
       <Row className={'items-center text-gray-500 sm:justify-start'}>
         <TrendingUpIcon
-          className={'text-primary ml-1 h-7 w-7 flex-shrink-0 sm:ml-2'}
+          className={'ml-1 h-7 w-7 flex-shrink-0 text-teal-500 sm:ml-2'}
         />
         <div
           className={'ml-2 flex w-full flex-row flex-wrap truncate'}
@@ -346,7 +348,7 @@ function IncomeNotificationGroupItem(props: {
           <div className={'flex w-full flex-row justify-between'}>
             <div>
               {'Daily Income Summary: '}
-              <span className={'text-primary'}>
+              <span className={'text-teal-500'}>
                 {'+' + formatMoney(totalIncome)}
               </span>
             </div>
@@ -411,17 +413,12 @@ function IncomeNotificationItem(props: {
   const { notification, justSummary } = props
   const { sourceType, sourceUserUsername, sourceText, data } = notification
   const [highlighted] = useState(!notification.isSeen)
-  const { width } = useWindowSize()
-  const isMobile = (width && width < 768) || false
+  const isMobile = useIsMobile(768)
   const user = useUser()
   const isTip = sourceType === 'tip' || sourceType === 'tip_and_like'
   const isUniqueBettorBonus = sourceType === 'bonus'
   const userLinks: MultiUserLinkInfo[] =
     isTip || isUniqueBettorBonus ? data?.uniqueUsers ?? [] : []
-
-  useEffect(() => {
-    setNotificationsAsSeen([notification])
-  }, [notification])
 
   function reasonAndLink(simple: boolean) {
     const { sourceText } = notification
@@ -494,7 +491,7 @@ function IncomeNotificationItem(props: {
 
   const incomeNotificationLabel = () => {
     return sourceText ? (
-      <span className="text-primary">
+      <span className="text-teal-500">
         {'+' + formatMoney(parseInt(sourceText))}
       </span>
     ) : (
@@ -585,8 +582,7 @@ function NotificationGroupItem(props: {
   const { notificationGroup, className } = props
   const { notifications } = notificationGroup
   const { sourceContractTitle } = notifications[0]
-  const { width } = useWindowSize()
-  const isMobile = (width && width < 768) || false
+  const isMobile = useIsMobile(768)
   const numSummaryLines = 3
 
   const [expanded, setExpanded] = useState(
@@ -600,10 +596,6 @@ function NotificationGroupItem(props: {
     if (event.ctrlKey || event.metaKey) return
     setExpanded(!expanded)
   }
-
-  useEffect(() => {
-    setNotificationsAsSeen(notifications)
-  }, [notifications])
 
   useEffect(() => {
     if (expanded) setHighlighted(false)
@@ -710,10 +702,6 @@ function NotificationItem(props: {
   const { sourceType, reason, sourceUpdateType } = notification
 
   const [highlighted] = useState(!notification.isSeen)
-
-  useEffect(() => {
-    setNotificationsAsSeen([notification])
-  }, [notification])
 
   // TODO Any new notification should be its own component
   if (reason === 'bet_fill') {
@@ -848,8 +836,7 @@ function NotificationFrame(props: {
     sourceText,
   } = notification
 
-  const { width } = useWindowSize()
-  const isMobile = (width ?? 0) < 600
+  const isMobile = useIsMobile(600)
   return (
     <div
       className={clsx(
@@ -859,7 +846,7 @@ function NotificationFrame(props: {
     >
       <div className={'relative cursor-pointer'}>
         <SiteLink
-          href={getSourceUrl(notification) ?? ''}
+          href={getSourceUrl(notification)}
           className={'absolute left-0 right-0 top-0 bottom-0 z-0'}
           onClick={() =>
             track('Notification Clicked', {
@@ -942,9 +929,9 @@ function BetFillNotification(props: {
           className={clsx(
             'mx-1',
             creatorOutcome === 'YES'
-              ? 'text-primary'
+              ? 'text-teal-500'
               : creatorOutcome === 'NO'
-              ? 'text-red-500'
+              ? 'text-scarlet-500'
               : 'text-blue-500'
           )}
         >
@@ -963,7 +950,7 @@ function BetFillNotification(props: {
     return (
       <NotificationSummaryFrame notification={notification} subtitle={subtitle}>
         <Row className={'line-clamp-1'}>
-          <span className={'text-primary mr-1'}>{amount}</span>
+          <span className={'mr-1 text-teal-500'}>{amount}</span>
           <span>{description}</span>
         </Row>
       </NotificationSummaryFrame>
@@ -979,7 +966,7 @@ function BetFillNotification(props: {
     >
       <Row>
         <span>
-          <span className="text-primary mr-1">{amount}</span>
+          <span className="mr-1 text-teal-500">{amount}</span>
           {description}
         </span>
       </Row>
@@ -1077,15 +1064,20 @@ function ContractResolvedNotification(props: {
     if (sourceText === 'CANCEL') return <CancelLabel />
     if (sourceText === 'MKT' || sourceText === 'PROB') return <MultiLabel />
 
-    // Numeric market
-    if (parseFloat(sourceText))
+    // Numeric markets
+    const isNumberWithCommaOrPeriod = /^[0-9,.]*$/.test(sourceText)
+    if (isNumberWithCommaOrPeriod)
       return <NumericValueLabel value={parseFloat(sourceText)} />
 
     // Free response market
     return (
-      <div className={'line-clamp-1 text-blue-400'}>
-        <Linkify text={sourceText} />
-      </div>
+      <span
+        className={
+          'inline-block max-w-[200px] truncate align-bottom text-blue-400'
+        }
+      >
+        {sourceText}
+      </span>
     )
   }
 
@@ -1093,11 +1085,11 @@ function ContractResolvedNotification(props: {
     userInvestment && userPayout !== undefined ? (
       <>
         Resolved: {resolutionDescription()} Invested:
-        <span className={'text-primary'}>{formatMoney(userInvestment)} </span>
+        <span className={'text-teal-500'}>{formatMoney(userInvestment)} </span>
         Payout:
         <span
           className={clsx(
-            profitable ? 'text-primary' : 'text-red-500',
+            profitable ? 'text-teal-500' : 'text-scarlet-500',
             'truncate text-ellipsis'
           )}
         >
@@ -1130,7 +1122,7 @@ function ContractResolvedNotification(props: {
   )
 }
 
-export const setNotificationsAsSeen = async (notifications: Notification[]) => {
+const markNotificationsAsSeen = async (notifications: Notification[]) => {
   const unseenNotifications = notifications.filter((n) => !n.isSeen)
   return await Promise.all(
     unseenNotifications.map((n) => {
@@ -1191,57 +1183,6 @@ function QuestionOrGroupLink(props: {
   )
 }
 
-function getSourceUrl(notification: Notification) {
-  const {
-    sourceType,
-    sourceId,
-    sourceUserUsername,
-    sourceContractCreatorUsername,
-    sourceContractSlug,
-    sourceSlug,
-  } = notification
-  if (sourceType === 'follow') return `/${sourceUserUsername}`
-  if (sourceType === 'group' && sourceSlug) return `${groupPath(sourceSlug)}`
-  // User referral via contract:
-  if (
-    sourceContractCreatorUsername &&
-    sourceContractSlug &&
-    sourceType === 'user'
-  )
-    return `/${sourceContractCreatorUsername}/${sourceContractSlug}`
-  // User referral:
-  if (sourceType === 'user' && !sourceContractSlug)
-    return `/${sourceUserUsername}`
-  if (sourceType === 'challenge') return `${sourceSlug}`
-  if (sourceContractCreatorUsername && sourceContractSlug)
-    return `/${sourceContractCreatorUsername}/${sourceContractSlug}#${getSourceIdForLinkComponent(
-      sourceId ?? '',
-      sourceType
-    )}`
-  else if (sourceSlug)
-    return `${
-      sourceSlug.startsWith('/') ? sourceSlug : '/' + sourceSlug
-    }#${getSourceIdForLinkComponent(sourceId ?? '', sourceType)}`
-}
-
-function getSourceIdForLinkComponent(
-  sourceId: string,
-  sourceType?: notification_source_types
-) {
-  switch (sourceType) {
-    case 'answer':
-      return `answer-${sourceId}`
-    case 'comment':
-      return sourceId
-    case 'contract':
-      return ''
-    case 'bet':
-      return ''
-    default:
-      return sourceId
-  }
-}
-
 function NotificationTextLabel(props: {
   notification: Notification
   className?: string
@@ -1271,7 +1212,7 @@ function NotificationTextLabel(props: {
     return (
       <span>
         As a thank you, we sent you{' '}
-        <span className="text-primary">
+        <span className="text-teal-500">
           {formatMoney(parseInt(sourceText))}
         </span>
         !
@@ -1285,7 +1226,7 @@ function NotificationTextLabel(props: {
     return (
       <>
         <span> for </span>
-        <span className="text-primary">
+        <span className="text-teal-500">
           {formatMoney(parseInt(sourceText))}
         </span>
       </>

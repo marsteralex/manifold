@@ -11,7 +11,7 @@ import {
 import toast from 'react-hot-toast'
 
 import { User } from 'web/lib/firebase/users'
-import { useUser } from 'web/hooks/use-user'
+import { useUser, useUserById } from 'web/hooks/use-user'
 import { CreatorContractsList } from './contract/contracts-grid'
 import { SEO } from './SEO'
 import { Page } from './layout/page'
@@ -32,16 +32,20 @@ import { GroupsButton } from 'web/components/groups/groups-button'
 import { PortfolioValueSection } from './portfolio/portfolio-value-section'
 import { copyToClipboard } from 'web/lib/util/copy'
 import { track } from 'web/lib/service/analytics'
-import { DOMAIN } from 'common/envs/constants'
+import { BOT_USERNAMES, DOMAIN } from 'common/envs/constants'
 import { BadgeDisplay } from 'web/components/badge-display'
 import { PostCardList } from './posts/post-card'
 import { usePostsByUser } from 'web/hooks/use-post'
 import { LoadingIndicator } from './widgets/loading-indicator'
 import { DailyStats } from 'web/components/daily-stats'
-import { SectionHeader } from './groups/group-overview'
+import { SectionHeader } from './groups/group-about'
+import { Button } from './buttons/button'
+import { BotBadge } from './widgets/user-link'
+import { BlockUserButton } from 'web/components/buttons/block-user-button'
 
 export function UserPage(props: { user: User }) {
-  const { user } = props
+  const user = useUserById(props.user.id) ?? props.user
+
   const router = useRouter()
   const currentUser = useUser()
   const isCurrentUser = user.id === currentUser?.id
@@ -100,15 +104,23 @@ export function UserPage(props: { user: User }) {
             <div className="flex flex-col items-start gap-2 sm:flex-row sm:justify-between">
               <Col>
                 <span className="break-anywhere text-lg font-bold sm:text-2xl">
-                  {user.name}
+                  {user.name}{' '}
+                  {BOT_USERNAMES.includes(user.username) && <BotBadge />}
                 </span>
-                <Row className="sm:text-md -mt-1 items-center gap-x-3 text-sm ">
+                <Row className="sm:text-md items-center gap-x-3 text-sm ">
                   <span className={' text-greyscale-4'}>@{user.username}</span>
                   <BadgeDisplay user={user} query={router.query} />
                 </Row>
               </Col>
-              {isCurrentUser && <DailyStats user={user} showLoans />}
-              {!isCurrentUser && <UserFollowButton userId={user.id} />}
+              <Row
+                className={
+                  'h-full w-full items-center justify-between sm:w-auto sm:justify-end sm:gap-4'
+                }
+              >
+                {isCurrentUser && <DailyStats user={user} showLoans />}
+                {!isCurrentUser && <UserFollowButton userId={user.id} />}
+                {!isCurrentUser && <BlockUserButton user={user} />}
+              </Row>
             </div>
             <ProfilePublicStats
               className="sm:text-md text-greyscale-6 hidden text-sm md:inline"
@@ -202,7 +214,7 @@ export function UserPage(props: { user: User }) {
                 >
                   <Row className="items-center gap-1">
                     <LinkIcon className="h-4 w-4" />
-                    Earn M$250 per referral
+                    Earn M$250 per friend referred
                   </Row>
                 </div>
               )}
@@ -240,7 +252,27 @@ export function UserPage(props: { user: User }) {
                 content: (
                   <>
                     <Spacer h={4} />
-                    <SectionHeader label={'Posts'} href={''} />
+
+                    <Row className="flex items-center justify-between">
+                      <Col>
+                        <SectionHeader label={'Posts'} href={''} />
+                      </Col>
+                      <Col>
+                        {currentUser && (
+                          <SiteLink
+                            className="mb-3 text-xl"
+                            href={'/create-post'}
+                            onClick={() =>
+                              track('home click create post', {
+                                section: 'create-post',
+                              })
+                            }
+                          >
+                            <Button>Create Post</Button>
+                          </SiteLink>
+                        )}
+                      </Col>
+                    </Row>
 
                     <Col>
                       {userPosts ? (

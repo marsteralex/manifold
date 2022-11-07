@@ -3,7 +3,6 @@ import {
   ExclamationIcon,
   PencilIcon,
   PlusCircleIcon,
-  UserGroupIcon,
 } from '@heroicons/react/solid'
 import clsx from 'clsx'
 import { Editor } from '@tiptap/react'
@@ -16,16 +15,18 @@ import { DateTimeTooltip } from '../widgets/datetime-tooltip'
 import { fromNow } from 'web/lib/util/time'
 import { Avatar } from '../widgets/avatar'
 import { useState } from 'react'
-import NewContractBadge from '../new-contract-badge'
 import { MiniUserFollowButton } from '../buttons/follow-button'
-import { DAY_MS } from 'common/util/time'
 import { useUser, useUserById } from 'web/hooks/use-user'
 import { Button } from 'web/components/buttons/button'
 import { Modal } from 'web/components/layout/modal'
 import { Col } from 'web/components/layout/col'
 import { ContractGroupsList } from 'web/components/groups/contract-groups-list'
 import { linkClass } from 'web/components/widgets/site-link'
-import { getGroupLinkToDisplay, groupPath } from 'web/lib/firebase/groups'
+import {
+  getGroupLinksToDisplay,
+  getGroupLinkToDisplay,
+  groupPath,
+} from 'web/lib/firebase/groups'
 import { insertContent } from '../editor/utils'
 import { contractMetrics } from 'common/contract-details'
 import { UserLink } from 'web/components/widgets/user-link'
@@ -33,12 +34,8 @@ import { Tooltip } from 'web/components/widgets/tooltip'
 import { ExtraContractActionsRow } from './extra-contract-actions-row'
 import { GroupLink } from 'common/group'
 import { Subtitle } from '../widgets/subtitle'
-import { useIsMobile } from 'web/hooks/use-is-mobile'
 import { useIsClient } from 'web/hooks/use-is-client'
-import {
-  BountiedContractBadge,
-  BountiedContractSmallBadge,
-} from 'web/components/contract/bountied-contract-badge'
+import { BountiedContractSmallBadge } from 'web/components/contract/bountied-contract-badge'
 import { Input } from '../widgets/input'
 import { editorExtensions } from '../widgets/editor'
 
@@ -50,20 +47,14 @@ export function MiscDetails(props: {
   hideGroupLink?: boolean
 }) {
   const { contract, showTime, hideGroupLink } = props
-  const {
-    closeTime,
-    isResolved,
-    createdTime,
-    resolutionTime,
-    uniqueBettorCount,
-  } = contract
+  const { closeTime, resolutionTime, uniqueBettorCount } = contract
 
   const isClient = useIsClient()
-  const isNew = createdTime > Date.now() - DAY_MS && !isResolved
+  // const isNew = createdTime > Date.now() - DAY_MS && !isResolved
   const groupToDisplay = getGroupLinkToDisplay(contract)
 
   return (
-    <Row className="items-center gap-3 truncate text-sm text-gray-400">
+    <Row className="text-greyscale-4 w-full items-center gap-3 text-sm">
       {isClient && showTime === 'close-date' ? (
         <Row className="gap-0.5 whitespace-nowrap">
           <ClockIcon className="h-5 w-5" />
@@ -76,22 +67,23 @@ export function MiscDetails(props: {
           {'Resolved '}
           {fromNow(resolutionTime)}
         </Row>
-      ) : (contract.openCommentBounties ?? 0) > 0 ? (
-        <BountiedContractBadge />
-      ) : !isNew || (uniqueBettorCount ?? 0) > 1 ? (
-        <Row className={'shrink-0'}>
-          <UserGroupIcon className="mr-1 h-4 w-4" />
-          {uniqueBettorCount || '0'} trader{uniqueBettorCount !== 1 ? 's' : ''}
+      ) : (uniqueBettorCount ?? 0) > 1 ? (
+        <Row className={'shrink-0 gap-1'}>
+          <div className="font-semibold">{uniqueBettorCount || '0'} </div>
+          trader
+          {uniqueBettorCount !== 1 ? 's' : ''}
         </Row>
       ) : (
-        <NewContractBadge />
+        <></>
       )}
 
       {!hideGroupLink && groupToDisplay && (
-        <Link prefetch={false} href={groupPath(groupToDisplay.slug)}>
-          <a className={clsx(linkClass, 'truncate text-sm text-gray-400')}>
-            {groupToDisplay.name}
-          </a>
+        <Link
+          prefetch={false}
+          href={groupPath(groupToDisplay.slug)}
+          className={clsx(linkClass, 'text-greyscale-4 w-32 truncate text-sm')}
+        >
+          {groupToDisplay.name}
         </Link>
       )}
     </Row>
@@ -109,12 +101,12 @@ export function AvatarDetails(props: {
 
   return (
     <Row
-      className={clsx('items-center gap-2 text-sm text-gray-400', className)}
+      className={clsx('text-greyscale-4 items-center gap-2 text-sm', className)}
     >
       <Avatar
         username={creatorUsername}
         avatarUrl={creatorAvatarUrl}
-        size={6}
+        size={4}
         noLink={noLink}
       />
       <UserLink
@@ -132,24 +124,13 @@ export function ContractDetails(props: {
   disabled?: boolean
 }) {
   const { contract, disabled } = props
-  const isMobile = useIsMobile()
 
   return (
-    <Col>
-      <Row className="justify-between">
-        <MarketSubheader contract={contract} disabled={disabled} />
-        <div className="mt-0">
-          <ExtraContractActionsRow contract={contract} />
-        </div>
-      </Row>
-      {/* GROUPS */}
-      {isMobile && (
-        <Row className="mt-2 gap-1">
-          <BountiedContractSmallBadge contract={contract} />
-          <MarketGroups contract={contract} disabled={disabled} />
-        </Row>
-      )}
-    </Col>
+    <Row className="flex-wrap gap-2 sm:flex-nowrap">
+      <MarketSubheader contract={contract} disabled={disabled} />
+      <MarketGroups contract={contract} disabled={disabled} />
+      <ExtraContractActionsRow contract={contract} />
+    </Row>
   )
 }
 
@@ -164,9 +145,8 @@ export function MarketSubheader(props: {
   const creator = useUserById(creatorId)
   const correctResolutionPercentage = creator?.fractionResolvedCorrectly
   const isCreator = user?.id === creatorId
-  const isMobile = useIsMobile()
   return (
-    <Row>
+    <Row className="grow">
       <Avatar
         username={creatorUsername}
         avatarUrl={creatorAvatarUrl}
@@ -180,41 +160,37 @@ export function MarketSubheader(props: {
           <MiniUserFollowButton userId={creatorId} />
         </div>
       )}
-      <Col className="text-greyscale-6 ml-2 flex-1 flex-wrap text-sm">
-        <Row className="w-full space-x-1 ">
+      <Col className="text-greyscale-6 ml-2 flex-1 text-sm">
+        <Row className="gap-1">
           {disabled ? (
             creatorName
           ) : (
-            <Row className={'gap-2'}>
-              <UserLink
-                className="my-auto whitespace-nowrap"
-                name={creatorName}
-                username={creatorUsername}
-              />
-              {/*<BadgeDisplay user={creator} />*/}
-            </Row>
+            <UserLink
+              className="my-auto whitespace-nowrap"
+              name={creatorName}
+              username={creatorUsername}
+            />
+            /*<BadgeDisplay user={creator} className="mr-1" />*/
           )}
           {correctResolutionPercentage != null &&
             correctResolutionPercentage < BAD_CREATOR_THRESHOLD && (
-              <Tooltip text="This creator has a track record of creating contracts that are resolved incorrectly.">
+              <Tooltip
+                text="This creator has a track record of creating contracts that are resolved incorrectly."
+                placement="bottom"
+                className="w-fit"
+              >
                 <ExclamationIcon className="h-6 w-6 text-yellow-500" />
               </Tooltip>
             )}
         </Row>
-        <Row className="text-2xs text-greyscale-4 flex-wrap gap-2 sm:text-xs">
+        <div className="text-2xs text-greyscale-4 sm:text-xs">
           <CloseOrResolveTime
             contract={contract}
             resolvedDate={resolvedDate}
             isCreator={isCreator}
             disabled={disabled}
           />
-          {!isMobile && (
-            <Row className={'gap-1'}>
-              {!disabled && <BountiedContractSmallBadge contract={contract} />}
-              <MarketGroups contract={contract} disabled={disabled} />
-            </Row>
-          )}
-        </Row>
+        </div>
       </Col>
     </Row>
   )
@@ -230,55 +206,59 @@ export function CloseOrResolveTime(props: {
   const { resolutionTime, closeTime } = contract
   if (!!closeTime || !!resolvedDate) {
     return (
-      <Row className="select-none items-center gap-1">
+      <Row className="select-none flex-nowrap items-center gap-1">
         {resolvedDate && resolutionTime ? (
-          <>
-            <DateTimeTooltip text="Market resolved:" time={resolutionTime}>
-              <Row>
-                <div>resolved&nbsp;</div>
-                {resolvedDate}
-              </Row>
-            </DateTimeTooltip>
-          </>
+          <DateTimeTooltip
+            className="whitespace-nowrap"
+            text="Market resolved:"
+            time={resolutionTime}
+          >
+            resolved&nbsp;{resolvedDate}
+          </DateTimeTooltip>
         ) : null}
 
         {!resolvedDate && closeTime && (
-          <Row>
-            {dayjs().isBefore(closeTime) && <div>closes&nbsp;</div>}
-            {!dayjs().isBefore(closeTime) && <div>closed&nbsp;</div>}
+          <div className="flex gap-1 whitespace-nowrap">
+            {dayjs().isBefore(closeTime) ? 'closes' : 'closed'}
             <EditableCloseDate
               closeTime={closeTime}
               contract={contract}
               isCreator={isCreator ?? false}
               disabled={disabled}
             />
-          </Row>
+          </div>
         )}
       </Row>
     )
   } else return <></>
 }
 
-export function MarketGroups(props: {
-  contract: Contract
-  disabled?: boolean
-}) {
+function MarketGroups(props: { contract: Contract; disabled?: boolean }) {
   const [open, setOpen] = useState(false)
   const user = useUser()
   const { contract, disabled } = props
-  const groupToDisplay = getGroupLinkToDisplay(contract)
+  const groupsToDisplay = getGroupLinksToDisplay(contract)
 
   return (
     <>
-      <Row className="items-center gap-1">
-        <GroupDisplay groupToDisplay={groupToDisplay} disabled={disabled} />
+      {/* Put after market action icons on mobile, but before them on desktop*/}
+      <Row className="order-last w-full flex-wrap items-end gap-1 sm:order-[unset]">
+        {!disabled && <BountiedContractSmallBadge contract={contract} />}
+
+        {groupsToDisplay.map((group) => (
+          <GroupDisplay
+            key={group.groupId}
+            groupToDisplay={group}
+            disabled={disabled}
+          />
+        ))}
 
         {!disabled && user && (
           <button
             className="text-greyscale-4 hover:text-greyscale-3"
             onClick={() => setOpen(true)}
           >
-            <PlusCircleIcon className="h-[18px]" />
+            <PlusCircleIcon className="h-[20px]" />
           </button>
         )}
       </Row>
@@ -378,7 +358,11 @@ export function GroupDisplay(props: {
     return disabled ? (
       groupSection
     ) : (
-      <Link prefetch={false} href={groupPath(groupToDisplay.slug)}>
+      <Link
+        prefetch={false}
+        href={groupPath(groupToDisplay.slug)}
+        legacyBehavior
+      >
         {groupSection}
       </Link>
     )

@@ -9,7 +9,7 @@ import { HistoryPoint, SingleValueHistoryChart } from './generic-charts'
 import { TooltipProps } from './helpers'
 import { SizedContainer } from 'web/components/sized-container'
 
-const MARGIN = { top: 20, right: 10, bottom: 20, left: 40 }
+const MARGIN = { top: 20, right: 40, bottom: 20, left: 10 }
 const MARGIN_X = MARGIN.left + MARGIN.right
 const MARGIN_Y = MARGIN.top + MARGIN.bottom
 
@@ -22,23 +22,21 @@ const getPoints = (startDate: number, dailyValues: number[]) => {
 }
 
 const DailyCountTooltip = (props: TooltipProps<Date, HistoryPoint>) => {
-  const { data, x, xScale } = props
-  const d = xScale.invert(x)
+  const { nearest } = props
   return (
     <Row className="items-center gap-2">
-      <span className="font-semibold">{dayjs(d).format('MMM DD')}</span>
-      <span className="text-greyscale-6">{data.y}</span>
+      <span className="font-semibold">{dayjs(nearest.x).format('MMM DD')}</span>
+      <span className="text-greyscale-6">{nearest.y}</span>
     </Row>
   )
 }
 
 const DailyPercentTooltip = (props: TooltipProps<Date, HistoryPoint>) => {
-  const { data, x, xScale } = props
-  const d = xScale.invert(x)
+  const { nearest } = props
   return (
     <Row className="items-center gap-2">
-      <span className="font-semibold">{dayjs(d).format('MMM DD')}</span>
-      <span className="text-greyscale-6">{formatPercent(data.y)}</span>
+      <span className="font-semibold">{dayjs(nearest.x).format('MMM DD')}</span>
+      <span className="text-greyscale-6">{formatPercent(nearest.y)}</span>
     </Row>
   )
 }

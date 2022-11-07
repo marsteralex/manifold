@@ -4,7 +4,7 @@ import clsx from 'clsx'
 import { Answer } from 'common/answer'
 import { AnyContractType, Contract } from 'common/contract'
 import { User } from 'common/user'
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useUser } from 'web/hooks/use-user'
 import { MAX_COMMENT_LENGTH } from 'web/lib/firebase/comments'
 import Curve from 'web/public/custom-components/curve'
@@ -27,6 +27,7 @@ export function CommentInput(props: {
   // unique id for autosave
   pageId: string
   className?: string
+  blocked?: boolean
 }) {
   const {
     parentAnswerOutcome,
@@ -34,12 +35,17 @@ export function CommentInput(props: {
     replyTo,
     onSubmitComment,
     pageId,
+    blocked,
   } = props
   const user = useUser()
 
+  const key = `comment ${pageId} ${
+    parentCommentId ?? parentAnswerOutcome ?? ''
+  }`
+
   const editor = useTextEditor({
-    key: `comment ${pageId} ${parentCommentId ?? parentAnswerOutcome ?? ''}`,
-    simple: true,
+    key,
+    size: 'sm',
     max: MAX_COMMENT_LENGTH,
     placeholder:
       !!parentCommentId || !!parentAnswerOutcome
@@ -54,11 +60,18 @@ export function CommentInput(props: {
     setIsSubmitting(true)
     onSubmitComment?.(editor)
     setIsSubmitting(false)
+    editor?.commands.clearContent(true)
+    // force clear save, because it can fail if editor unrenders
+    localStorage.removeItem(`text ${key}`)
   }
 
   if (user?.isBannedFromPosting) return <></>
 
-  return (
+  return blocked ? (
+    <div className={'my-4 text-sm text-gray-500'}>
+      The creator blocked you so you can't comment
+    </div>
+  ) : (
     <Row className={clsx(props.className, 'mb-2 gap-1 sm:gap-2')}>
       <Avatar
         avatarUrl={user?.avatarUrl}
@@ -71,7 +84,7 @@ export function CommentInput(props: {
           editor={editor}
           replyTo={replyTo}
           user={user}
-          submitComment={submitComment}
+          submit={submitComment}
           isSubmitting={isSubmitting}
         />
       </div>
@@ -95,7 +108,7 @@ export function AnswerCommentInput(props: {
     <>
       <Col>
         <Row className="relative">
-          <div className="absolute -bottom-1 left-1.5">
+          <div className="absolute -bottom-1 left-1.5 z-20">
             <Curve size={32} strokeWidth={1} color="#D8D8EB" />
           </div>
           <div className="ml-[38px]">
@@ -127,18 +140,13 @@ export function CommentInputTextArea(props: {
   user: User | undefined | null
   replyTo?: { id: string; username: string }
   editor: Editor | null
-  submitComment: () => void
+  submit: () => void
   isSubmitting: boolean
 }) {
-  const { user, editor, submitComment, isSubmitting, replyTo } = props
+  const { user, editor, submit, isSubmitting, replyTo } = props
   useEffect(() => {
     editor?.setEditable(!isSubmitting)
   }, [isSubmitting, editor])
-
-  const submit = () => {
-    submitComment()
-    editor?.commands?.clearContent(true)
-  }
 
   useEffect(() => {
     if (!editor) {

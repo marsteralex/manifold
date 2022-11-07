@@ -56,6 +56,18 @@ export default function LabsPage() {
           />
 
           <LabCard
+            title="⚡ Live feed"
+            description="See trades and comments in real time"
+            href="/live"
+          />
+
+          <LabCard
+            title="🔥 Swipe"
+            description="High frequency trading tool"
+            href="/swipe"
+          />
+
+          <LabCard
             title="🎲 Magic the Guessering"
             description="Match MTG card names to their art"
             href={`https://${DOMAIN}/mtg/index.html`}

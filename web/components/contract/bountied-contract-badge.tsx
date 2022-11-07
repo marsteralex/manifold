@@ -10,7 +10,7 @@ import { CommentBountyDialog } from './comment-bounty-dialog'
 
 export function BountiedContractBadge() {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-indigo-300 px-3  py-0.5 text-sm font-medium text-white">
+    <span className="inline-flex items-center gap-1 rounded-full bg-indigo-300 py-0.5 pl-1 pr-2 text-xs font-medium text-white">
       <CurrencyDollarIcon className={'h4 w-4'} /> Bounty
     </span>
   )
@@ -52,7 +52,7 @@ export function BountiedContractSmallBadge(props: {
   )} currently available.`
 
   return (
-    <Tooltip text={tooltip} placement="bottom">
+    <Tooltip className="inline-flex" text={tooltip} placement="bottom">
       {modal}
       <SmallBadge
         text={`${formatMoney(openCommentBounties)} bounty`}

@@ -11,7 +11,7 @@ import { Col } from '../layout/col'
 import { Content } from '../widgets/editor'
 import { LoadingIndicator } from '../widgets/loading-indicator'
 import { UserLink } from 'web/components/widgets/user-link'
-import { PaginationNextPrev } from 'web/components/widgets/pagination'
+import { PaginationNextPrev } from '../widgets/pagination'
 
 type ContractKey = {
   contractId: string
@@ -114,7 +114,7 @@ function ProfileComment(props: { comment: ContractComment }) {
           />{' '}
           <RelativeTimestamp time={createdTime} />
         </p>
-        <Content content={content || text} smallImage />
+        <Content content={content || text} size="sm" />
       </div>
     </Row>
   )

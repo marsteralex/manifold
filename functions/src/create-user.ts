@@ -19,6 +19,7 @@ import { APIError, newEndpoint, validate } from './api'
 import { Group } from '../../common/group'
 import { SUS_STARTING_BALANCE, STARTING_BALANCE } from '../../common/economy'
 import { getDefaultNotificationPreferences } from '../../common/user-notification-preferences'
+import { removeUndefinedProps } from '../../common/util/object'
 
 const bodySchema = z.object({
   deviceToken: z.string().optional(),
@@ -55,7 +56,8 @@ export const createuser = newEndpoint(opts, async (req, auth) => {
 
   const balance = deviceUsedBefore ? SUS_STARTING_BALANCE : STARTING_BALANCE
 
-  const user: User = {
+  // Only undefined prop should be avatarUrl
+  const user: User = removeUndefinedProps({
     id: auth.uid,
     name,
     username,
@@ -64,6 +66,7 @@ export const createuser = newEndpoint(opts, async (req, auth) => {
     totalDeposits: balance,
     createdTime: Date.now(),
     profitCached: { daily: 0, weekly: 0, monthly: 0, allTime: 0 },
+    profitRankCached: { daily: 0, weekly: 0, monthly: 0, allTime: 0 },
     creatorVolumeCached: { daily: 0, weekly: 0, monthly: 0, allTime: 0 },
     nextLoanCached: 0,
     followerCountCached: 0,
@@ -71,7 +74,7 @@ export const createuser = newEndpoint(opts, async (req, auth) => {
     shouldShowWelcome: true,
     fractionResolvedCorrectly: 1,
     achievements: {},
-  }
+  })
 
   await firestore.collection('users').doc(auth.uid).create(user)
   console.log('created user', username, 'firebase id:', auth.uid)
@@ -82,7 +85,11 @@ export const createuser = newEndpoint(opts, async (req, auth) => {
     email,
     initialIpAddress: req.ip,
     initialDeviceToken: deviceToken,
-    notificationPreferences: getDefaultNotificationPreferences(auth.uid),
+    notificationPreferences: getDefaultNotificationPreferences(),
+    blockedUserIds: [],
+    blockedByUserIds: [],
+    blockedContractIds: [],
+    blockedGroupSlugs: [],
   }
 
   await firestore.collection('private-users').doc(auth.uid).create(privateUser)

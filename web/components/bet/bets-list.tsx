@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { keyBy, groupBy, mapValues, sortBy, partition, sumBy } from 'lodash'
 import dayjs from 'dayjs'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/solid'
 
 import { Bet, MAX_USER_BETS_LOADED } from 'web/lib/firebase/bets'
@@ -54,8 +54,9 @@ import { safeLocalStorage } from 'web/lib/util/local'
 import { ExclamationIcon } from '@heroicons/react/outline'
 import { Select } from '../widgets/select'
 import { Table } from '../widgets/table'
+import { SellRow } from './sell-row'
 
-type BetSort = 'newest' | 'profit' | 'closeTime' | 'value'
+type BetSort = 'newest' | 'profit' | 'loss' | 'closeTime' | 'value'
 type BetFilter = 'open' | 'limit_bet' | 'sold' | 'closed' | 'resolved' | 'all'
 
 const CONTRACTS_PER_PAGE = 50
@@ -96,9 +97,15 @@ export function BetsList(props: { user: User }) {
     key: 'bets-list-filter',
     store: storageStore(safeLocalStorage()),
   })
+
   const [page, setPage] = useState(0)
   const start = page * CONTRACTS_PER_PAGE
   const end = start + CONTRACTS_PER_PAGE
+
+  // reset to first page when changing filter
+  useEffect(() => {
+    setPage(0)
+  }, [filter])
 
   if (!bets || !contractsById) {
     return <LoadingIndicator />
@@ -131,6 +138,7 @@ export function BetsList(props: { user: User }) {
   }
   const SORTS: Record<BetSort, (c: Contract) => number> = {
     profit: (c) => contractsMetrics[c.id].profit,
+    loss: (c) => -contractsMetrics[c.id].profit,
     value: (c) => contractsMetrics[c.id].payout,
     newest: (c) =>
       Math.max(...contractBets[c.id].map((bet) => bet.createdTime)),
@@ -221,6 +229,7 @@ export function BetsList(props: { user: User }) {
             <option value="newest">Recent</option>
             <option value="value">Value</option>
             <option value="profit">Profit</option>
+            <option value="loss">Loss</option>
             <option value="closeTime">Close date</option>
           </Select>
         </Row>
@@ -283,7 +292,9 @@ function ContractBets(props: {
   isYourBets: boolean
 }) {
   const { bets, contract, metric, isYourBets } = props
-  const { resolution, outcomeType } = contract
+  const { resolution, closeTime, outcomeType, isResolved } = contract
+
+  const user = useUser()
 
   const limitBets = bets.filter(
     (bet) => bet.limitProb !== undefined && !bet.isCancelled && !bet.isFilled
@@ -293,6 +304,7 @@ function ContractBets(props: {
   const [collapsed, setCollapsed] = useState(true)
 
   const isBinary = outcomeType === 'BINARY'
+  const isClosed = closeTime && closeTime < Date.now()
 
   const { payout, profit, profitPercent } = getContractBetMetrics(
     contract,
@@ -306,13 +318,12 @@ function ContractBets(props: {
       >
         <Col className="flex-[2] gap-1">
           <Row className="mr-2 max-w-lg">
-            <Link href={contractPath(contract)}>
-              <a
-                className="font-medium text-indigo-700 hover:underline hover:decoration-indigo-400 hover:decoration-2"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {contract.question}
-              </a>
+            <Link
+              href={contractPath(contract)}
+              className="font-medium text-indigo-700 hover:underline hover:decoration-indigo-400 hover:decoration-2"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {contract.question}
             </Link>
 
             {/* Show carrot for collapsing. Hack the positioning. */}
@@ -339,7 +350,7 @@ function ContractBets(props: {
               </>
             ) : isBinary ? (
               <>
-                <div className="text-primary text-lg">
+                <div className="text-lg text-teal-500">
                   {getBinaryProbPercent(contract)}
                 </div>
                 <div>•</div>
@@ -367,6 +378,17 @@ function ContractBets(props: {
             contract={contract}
             userBets={bets}
           />
+
+          {isYourBets &&
+            !isResolved &&
+            !isClosed &&
+            contract.outcomeType === 'BINARY' && (
+              <SellRow
+                className="mt-4 items-start"
+                contract={contract}
+                user={user}
+              />
+            )}
 
           {contract.mechanism === 'cpmm-1' && limitBets.length > 0 && (
             <div className="max-w-md">

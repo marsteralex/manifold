@@ -55,14 +55,28 @@ export const CORS_ORIGIN_LOCALHOST = /^http:\/\/localhost:\d+$/
 
 // TODO: These should maybe be part of the env config?
 export const BOT_USERNAMES = [
+  'pos',
   'v',
+  'acc',
+  'jerk',
   'ArbitrageBot',
   'MarketManagerBot',
   'Botlab',
   'JuniorBot',
   'ManifoldDream',
+  'ManifoldBugs',
+  'ACXBot',
+  'JamesBot',
+  'RyanBot',
+  'trainbot',
+  'runebot',
+  'LiquidityBonusBot',
 ]
+
+export const HOUSE_BOT_USERNAME = 'acc'
 
 export function firestoreConsolePath(contractId: string) {
   return `https://console.firebase.google.com/project/${PROJECT_ID}/firestore/data/~2Fcontracts~2F${contractId}`
 }
+
+export const TEN_YEARS_SECS = 60 * 60 * 24 * 365 * 10

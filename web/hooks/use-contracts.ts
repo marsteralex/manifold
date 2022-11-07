@@ -9,6 +9,7 @@ import {
   getUserBetContractsQuery,
   listAllContracts,
   listenForContract,
+  listenForLiveContracts,
 } from 'web/lib/firebase/contracts'
 import { QueryClient, useQuery, useQueryClient } from 'react-query'
 import { MINUTE_MS, sleep } from 'common/util/time'
@@ -18,8 +19,9 @@ import {
   trendingIndex,
 } from 'web/lib/service/algolia'
 import { CPMMBinaryContract } from 'common/contract'
-import { Dictionary, zipObject } from 'lodash'
-import { useForceUpdate } from './use-force-update'
+import { zipObject } from 'lodash'
+import { inMemoryStore, usePersistentState } from './use-persistent-state'
+import { useStore, useStoreItems } from './use-store'
 
 export const useAllContracts = () => {
   const [contracts, setContracts] = useState<Contract[] | undefined>()
@@ -31,10 +33,15 @@ export const useAllContracts = () => {
   return contracts
 }
 
-export const useTrendingContracts = (maxContracts: number) => {
+export const useTrendingContracts = (
+  maxContracts: number,
+  additionalFilters?: string[]
+) => {
   const { data } = useQuery(['trending-contracts', maxContracts], () =>
     trendingIndex.search<CPMMBinaryContract>('', {
-      facetFilters: ['isResolved:false', 'visibility:public'],
+      facetFilters: ['isResolved:false', 'visibility:public'].concat(
+        additionalFilters ?? []
+      ),
       hitsPerPage: maxContracts,
     })
   )
@@ -42,10 +49,15 @@ export const useTrendingContracts = (maxContracts: number) => {
   return data.hits
 }
 
-export const useNewContracts = (maxContracts: number) => {
+export const useNewContracts = (
+  maxContracts: number,
+  additionalFilters?: string[]
+) => {
   const { data } = useQuery(['newest-contracts', maxContracts], () =>
     newIndex.search<CPMMBinaryContract>('', {
-      facetFilters: ['isResolved:false', 'visibility:public'],
+      facetFilters: ['isResolved:false', 'visibility:public'].concat(
+        additionalFilters ?? []
+      ),
       hitsPerPage: maxContracts,
     })
   )
@@ -55,7 +67,8 @@ export const useNewContracts = (maxContracts: number) => {
 
 export const useContractsByDailyScoreNotBetOn = (
   userId: string | null | undefined,
-  maxContracts: number
+  maxContracts: number,
+  additionalFilters?: string[]
 ) => {
   const { data } = useQuery(['daily-score', userId, maxContracts], () =>
     dailyScoreIndex.search<CPMMBinaryContract>('', {
@@ -63,7 +76,7 @@ export const useContractsByDailyScoreNotBetOn = (
         'isResolved:false',
         'visibility:public',
         `uniqueBettors:-${userId}`,
-      ],
+      ].concat(additionalFilters ?? []),
       hitsPerPage: maxContracts,
     })
   )
@@ -72,13 +85,17 @@ export const useContractsByDailyScoreNotBetOn = (
 }
 
 export const useContractsByDailyScoreGroups = (
-  groupSlugs: string[] | undefined
+  groupSlugs: string[] | undefined,
+  additionalFilters?: string[]
 ) => {
   const { data } = useQuery(['daily-score', groupSlugs], () =>
     Promise.all(
       (groupSlugs ?? []).map((slug) =>
         dailyScoreIndex.search<CPMMBinaryContract>('', {
-          facetFilters: ['isResolved:false', `groupLinks.slug:${slug}`],
+          facetFilters: ['isResolved:false', `groupLinks.slug:${slug}`].concat(
+            additionalFilters ?? []
+          ),
+          hitsPerPage: 10,
         })
       )
     )
@@ -133,51 +150,26 @@ export const useUserBetContracts = (userId: string) => {
   return result.data
 }
 
-const contractsStore: Dictionary<Contract | null> = {}
-const contractListeners: Dictionary<((contract: Contract | null) => void)[]> =
-  {}
+export const useLiveContracts = (count: number) => {
+  const [contracts, setContracts] = usePersistentState<Contract[] | undefined>(
+    undefined,
+    {
+      store: inMemoryStore(),
+      key: `liveContracts-${count}`,
+    }
+  )
 
-const updateContract = (contractId: string, contract: Contract | null) => {
-  contractsStore[contractId] = contract
-  contractListeners[contractId]?.forEach((l) => l(contract))
+  useEffect(() => {
+    return listenForLiveContracts(count, setContracts)
+  }, [count, setContracts])
+
+  return contracts
+}
+
+export const useContract = (contractId: string | undefined) => {
+  return useStore(contractId, listenForContract)
 }
 
 export const useContracts = (contractIds: string[]) => {
-  const forceUpdate = useForceUpdate()
-
-  useEffect(() => {
-    for (const id of contractIds) {
-      if (!contractListeners[id]) {
-        contractListeners[id] = []
-        listenForContract(id, (c) => updateContract(id, c))
-      }
-    }
-
-    const listeners = contractIds.map(
-      (id) =>
-        [
-          id,
-          () => {
-            // Update after all have loaded, and on every subsequent update.
-            if (contractIds.every((id) => contractsStore[id] !== undefined)) {
-              forceUpdate()
-            }
-          },
-        ] as const
-    )
-    for (const [id, listener] of listeners) {
-      contractListeners[id].push(listener)
-    }
-    return () => {
-      for (const [id, listener] of listeners) {
-        contractListeners[id] = contractListeners[id].filter(
-          (l) => l !== listener
-        )
-      }
-    }
-  }, [contractIds, forceUpdate])
-
-  return contractIds.map(
-    (id) => contractsStore[id] as Contract | null | undefined
-  )
+  return useStoreItems(contractIds, listenForContract)
 }

@@ -9,6 +9,7 @@ import { AddFundsModal } from '../add-funds-modal'
 import { Input } from './input'
 import Slider from 'rc-slider'
 import 'rc-slider/assets/index.css'
+import { binaryOutcomes } from '../bet/bet-panel'
 
 export function AmountInput(props: {
   amount: number | undefined
@@ -44,7 +45,7 @@ export function AmountInput(props: {
 
   return (
     <>
-      <Col className={clsx('relative', className)}>
+      <Col className={clsx('relative', error && 'mb-3', className)}>
         <label className="font-sm md:font-lg relative">
           <span className="text-greyscale-4 absolute top-1/2 my-auto ml-2 -translate-y-1/2">
             {label}
@@ -72,7 +73,7 @@ export function AmountInput(props: {
         </label>
 
         {error && (
-          <div className="absolute -bottom-5 whitespace-nowrap text-xs font-medium tracking-wide text-red-500">
+          <div className="text-scarlet-500 absolute -bottom-5 whitespace-nowrap text-xs font-medium tracking-wide">
             {error === 'Insufficient balance' ? (
               <>
                 Not enough funds.
@@ -104,23 +105,27 @@ export function BuyAmountInput(props: {
   setError: (error: string | undefined) => void
   minimumAmount?: number
   disabled?: boolean
-  showSliderOnMobile?: boolean
+  showSlider?: boolean
+  hideInput?: boolean
   className?: string
   inputClassName?: string
   // Needed to focus the amount input
   inputRef?: React.MutableRefObject<any>
+  binaryOutcome?: binaryOutcomes
 }) {
   const {
     amount,
     onChange,
     error,
     setError,
-    showSliderOnMobile: showSlider,
+    showSlider,
     disabled,
     className,
     inputClassName,
     minimumAmount,
     inputRef,
+    binaryOutcome,
+    hideInput,
   } = props
 
   const user = useUser()
@@ -144,33 +149,42 @@ export function BuyAmountInput(props: {
 
   return (
     <>
-      <Row className="items-center gap-4">
-        <AmountInput
-          amount={amount}
-          onChange={onAmountChange}
-          label={ENV_CONFIG.moneyMoniker}
-          error={error}
-          disabled={disabled}
-          className={className}
-          inputClassName={inputClassName}
-          inputRef={inputRef}
-        />
+      <Row className="items-center gap-4 xl:flex-wrap">
+        {!hideInput && (
+          <AmountInput
+            amount={amount}
+            onChange={onAmountChange}
+            label={ENV_CONFIG.moneyMoniker}
+            error={error}
+            disabled={disabled}
+            className={className}
+            inputClassName={inputClassName}
+            inputRef={inputRef}
+          />
+        )}
         {showSlider && (
           <Slider
             min={0}
             max={100}
             value={amount ?? 0}
             onChange={(value) => onAmountChange(value as number)}
-            className="mx-4 !h-4 xl:hidden [&>.rc-slider-rail]:bg-gray-200 [&>.rc-slider-track]:bg-indigo-400 [&>.rc-slider-handle]:bg-indigo-400"
-            railStyle={{ height: 16, top: 0, left: 0 }}
-            trackStyle={{ height: 16, top: 0 }}
+            className={clsx(
+              ' my-auto mx-2 !h-1 xl:mx-auto xl:mt-3 xl:ml-4  [&>.rc-slider-rail]:bg-gray-200',
+              binaryOutcome === 'YES'
+                ? '[&>.rc-slider-track]:bg-teal-600 [&>.rc-slider-handle]:bg-teal-500'
+                : binaryOutcome === 'NO'
+                ? '[&>.rc-slider-track]:bg-scarlet-600 [&>.rc-slider-handle]:bg-scarlet-300'
+                : '[&>.rc-slider-track]:bg-indigo-700 [&>.rc-slider-handle]:bg-indigo-500'
+            )}
+            railStyle={{ height: 4, top: 4, left: 0 }}
+            trackStyle={{ height: 4, top: 4 }}
             handleStyle={{
-              height: 32,
-              width: 32,
+              height: 24,
+              width: 24,
               opacity: 1,
               border: 'none',
               boxShadow: 'none',
-              top: -2,
+              top: -0.5,
             }}
             step={5}
           />

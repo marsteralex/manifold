@@ -162,7 +162,7 @@ export function SimpleBetPanel(props: {
 
         <BetSignUpPrompt />
 
-        {!user && <PlayMoneyDisclaimer />}
+        {user === null && <PlayMoneyDisclaimer />}
       </Col>
 
       {unfilledBets.length > 0 && (
@@ -171,6 +171,8 @@ export function SimpleBetPanel(props: {
     </Col>
   )
 }
+
+export type binaryOutcomes = 'YES' | 'NO' | undefined
 
 export function BuyPanel(props: {
   contract: CPMMBinaryContract | PseudoNumericContract
@@ -193,8 +195,7 @@ export function BuyPanel(props: {
 
   const initialProb = getProbability(contract)
   const isPseudoNumeric = contract.outcomeType === 'PSEUDO_NUMERIC'
-
-  const [outcome, setOutcome] = useState<'YES' | 'NO' | undefined>()
+  const [outcome, setOutcome] = useState<binaryOutcomes>()
   const [betAmount, setBetAmount] = useState<number | undefined>(10)
   const [error, setError] = useState<string | undefined>()
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -245,7 +246,7 @@ export function BuyPanel(props: {
         if (onBuySuccess) onBuySuccess()
         else {
           toast('Trade submitted!', {
-            icon: <CheckIcon className={'text-primary h-5 w-5'} />,
+            icon: <CheckIcon className={'h-5 w-5 text-teal-500'} />,
           })
         }
       })
@@ -311,6 +312,11 @@ export function BuyPanel(props: {
       : (betAmount ?? 0) > 10 && probChange >= 0.3 && bankrollFraction <= 1
       ? `Are you sure you want to move the market by ${displayedDifference}?`
       : undefined
+
+  // hide input on mobile for new users for first week
+  const hideInput =
+    mobileView &&
+    (user?.createdTime ?? 0) > Date.now() - 7 * 24 * 60 * 60 * 1000
 
   return (
     <Col className={hidden ? 'hidden' : ''}>
@@ -397,7 +403,9 @@ export function BuyPanel(props: {
           setError={setError}
           disabled={isSubmitting}
           inputRef={inputRef}
-          showSliderOnMobile
+          showSlider={true}
+          binaryOutcome={outcome}
+          hideInput={hideInput}
         />
 
         <Spacer h={8} />
@@ -643,6 +651,7 @@ function LimitOrderPanel(props: {
             placeholder="10"
           />
         </Col>
+
         <Col className="gap-2">
           <div className="text-sm text-gray-500">
             Buy {isPseudoNumeric ? <LowerLabel /> : <NoLabel />} down to
@@ -658,12 +667,12 @@ function LimitOrderPanel(props: {
       </Row>
 
       {outOfRangeError && (
-        <div className="mb-2 mr-auto self-center whitespace-nowrap text-xs font-medium tracking-wide text-red-500">
+        <div className="text-scarlet-500 mb-2 mr-auto self-center whitespace-nowrap text-xs font-medium tracking-wide">
           Limit is out of range
         </div>
       )}
       {rangeError && !outOfRangeError && (
-        <div className="mb-2 mr-auto self-center whitespace-nowrap text-xs font-medium tracking-wide text-red-500">
+        <div className="text-scarlet-500 mb-2 mr-auto self-center whitespace-nowrap text-xs font-medium tracking-wide">
           {isPseudoNumeric ? 'HIGHER' : 'YES'} limit must be less than{' '}
           {isPseudoNumeric ? 'LOWER' : 'NO'} limit
         </div>
@@ -671,7 +680,7 @@ function LimitOrderPanel(props: {
 
       <Row className="mt-1 mb-3 justify-between text-left text-sm text-gray-500">
         <span>
-          Max amount<span className="ml-1 text-red-500">*</span>
+          Max amount<span className="text-scarlet-500 ml-1">*</span>
         </span>
         <span className={'xl:hidden'}>
           Balance: {formatMoney(user?.balance ?? 0)}
@@ -685,7 +694,7 @@ function LimitOrderPanel(props: {
         error={error}
         setError={setError}
         disabled={isSubmitting}
-        showSliderOnMobile
+        showSlider={true}
       />
 
       <Col className="mt-3 w-full gap-3">

@@ -19,11 +19,20 @@ import NotificationsIcon from 'web/components/notifications-icon'
 import { useIsIframe } from 'web/hooks/use-is-iframe'
 import { trackCallback } from 'web/lib/service/analytics'
 import { User } from 'common/user'
+import { Col } from '../layout/col'
 
-function getNavigation() {
+const itemClass =
+  'sm:hover:bg-greyscale-2 block w-full py-1 px-3 text-center sm:hover:text-indigo-700'
+const selectedItemClass = 'bg-greyscale-1.5 text-indigo-700'
+
+function getNavigation(user: User) {
   return [
     { name: 'Home', href: '/home', icon: HomeIcon },
     { name: 'Search', href: '/search', icon: SearchIcon },
+    {
+      name: 'Profile',
+      href: `/${user.username}?tab=portfolio`,
+    },
     {
       name: 'Notifications',
       href: `/notifications`,
@@ -36,21 +45,6 @@ const signedOutNavigation = [
   { name: 'Home', href: '/', icon: HomeIcon },
   { name: 'Explore', href: '/search', icon: SearchIcon },
 ]
-
-export const userProfileItem = (user: User) => ({
-  name: formatMoney(user.balance),
-  trackingEventName: 'profile',
-  href: `/${user.username}?tab=portfolio`,
-  icon: () => (
-    <Avatar
-      className="mx-auto my-1"
-      size="xs"
-      username={user.username}
-      avatarUrl={user.avatarUrl}
-      noLink
-    />
-  ),
-})
 
 // From https://codepen.io/chris__sev/pen/QWGvYbL
 export function BottomNavBar() {
@@ -66,24 +60,20 @@ export function BottomNavBar() {
     return null
   }
 
-  const navigationOptions =
-    user === null ? signedOutNavigation : getNavigation()
+  const navigationOptions = user ? getNavigation(user) : signedOutNavigation
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-20 flex justify-between border-t-2 bg-white text-xs text-gray-700 lg:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-20 flex items-center justify-between border-t-2 bg-white text-xs text-gray-700 lg:hidden">
       {navigationOptions.map((item) => (
-        <NavBarItem key={item.name} item={item} currentPage={currentPage} />
-      ))}
-
-      {user && (
         <NavBarItem
-          key={'profile'}
+          key={item.name}
+          item={item}
           currentPage={currentPage}
-          item={userProfileItem(user)}
+          user={user}
         />
-      )}
+      ))}
       <div
-        className="w-full select-none py-1 px-3 text-center hover:cursor-pointer hover:bg-indigo-200 hover:text-indigo-700"
+        className={clsx(itemClass, sidebarOpen ? selectedItemClass : '')}
         onClick={() => setSidebarOpen(true)}
       >
         <MenuAlt3Icon className=" my-1 mx-auto h-6 w-6" aria-hidden="true" />
@@ -98,22 +88,52 @@ export function BottomNavBar() {
   )
 }
 
-function NavBarItem(props: { item: Item; currentPage: string }) {
-  const { item, currentPage } = props
+function NavBarItem(props: {
+  item: Item
+  currentPage: string
+  children?: any
+  user?: User | null
+  className?: string
+}) {
+  const { item, currentPage, children, user } = props
   const track = trackCallback(`navbar: ${item.trackingEventName ?? item.name}`)
-
-  return (
-    <Link href={item.href ?? '#'}>
-      <a
+  if (item.name === 'Profile' && user) {
+    return (
+      <Link
+        href={item.href ?? '#'}
         className={clsx(
-          'block w-full py-1 px-3 text-center hover:bg-indigo-200 hover:text-indigo-700',
-          currentPage === item.href && 'bg-gray-200 text-indigo-700'
+          itemClass,
+          currentPage === '/[username]' && selectedItemClass
         )}
         onClick={track}
       >
-        {item.icon && <item.icon className="my-1 mx-auto h-6 w-6" />}
-        {item.name}
-      </a>
+        <Col>
+          <div className="mx-auto my-1">
+            <Avatar
+              className="h-6 w-6"
+              username={user.username}
+              avatarUrl={user.avatarUrl}
+              noLink
+            />
+          </div>
+          {formatMoney(user.balance)}
+        </Col>
+      </Link>
+    )
+  }
+
+  return (
+    <Link
+      href={item.href ?? '#'}
+      className={clsx(
+        itemClass,
+        currentPage === item.href && selectedItemClass
+      )}
+      onClick={track}
+    >
+      {item.icon && <item.icon className="my-1 mx-auto h-6 w-6" />}
+      {children}
+      {item.name}
     </Link>
   )
 }

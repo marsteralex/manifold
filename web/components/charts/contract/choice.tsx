@@ -33,13 +33,13 @@ export const CHOICE_ANSWER_COLORS = [
 export const CHOICE_OTHER_COLOR = '#CCC'
 export const CHOICE_ALL_COLORS = [...CHOICE_ANSWER_COLORS, CHOICE_OTHER_COLOR]
 
-const MARGIN = { top: 20, right: 10, bottom: 20, left: 40 }
+const MARGIN = { top: 20, right: 40, bottom: 20, left: 10 }
 const MARGIN_X = MARGIN.left + MARGIN.right
 const MARGIN_Y = MARGIN.top + MARGIN.bottom
 
 const getAnswers = (contract: ChoiceContract) => {
   const { answers, outcomeType } = contract
-  const validAnswers = answers.filter(
+  const validAnswers = (answers ?? []).filter(
     (answer) => answer.id !== '0' || outcomeType === 'MULTIPLE_CHOICE'
   )
   return sortBy(
@@ -149,11 +149,12 @@ export const ChoiceContractChart = (props: {
 
   const ChoiceTooltip = useMemo(
     () => (props: TooltipProps<Date, MultiPoint<Bet>>) => {
-      const { data, x, xScale } = props
+      const { prev, x, xScale } = props
       const [start, end] = xScale.domain()
       const d = xScale.invert(x)
+      if (!prev) return null
       const legendItems = sortBy(
-        data.y.map((p, i) => ({
+        prev.y.map((p, i) => ({
           color: CHOICE_ALL_COLORS[i],
           label: i === CHOICE_ANSWER_COLORS.length ? 'Other' : answers[i].text,
           value: formatPct(p),
@@ -164,8 +165,8 @@ export const ChoiceContractChart = (props: {
       return (
         <>
           <Row className="items-center gap-2">
-            {data.obj && (
-              <Avatar size="xxs" avatarUrl={data.obj.userAvatarUrl} />
+            {prev.obj && (
+              <Avatar size="xxs" avatarUrl={prev.obj.userAvatarUrl} />
             )}
             <span className="text-semibold text-base">
               {formatDateInRange(d, start, end)}

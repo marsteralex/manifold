@@ -6,18 +6,12 @@ import { PAST_BETS, User } from 'common/user'
 import { CardHighlightOptions, ContractsGrid } from './contract/contracts-grid'
 import { ShowTime } from './contract/contract-details'
 import { Row } from './layout/row'
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useMemo,
-  ReactNode,
-  useState,
-} from 'react'
+import { useEffect, useRef, useMemo, ReactNode, useState } from 'react'
 import { IS_PRIVATE_MANIFOLD } from 'common/envs/constants'
 import { useFollows } from 'web/hooks/use-follows'
 import {
   historyStore,
+  inMemoryStore,
   urlParamStore,
   usePersistentState,
 } from 'web/hooks/use-persistent-state'
@@ -36,13 +30,14 @@ import {
   searchClient,
   searchIndexName,
 } from 'web/lib/service/algolia'
-import { useIsMobile } from 'web/hooks/use-is-mobile'
 import { AdjustmentsIcon } from '@heroicons/react/solid'
 import { Button } from './buttons/button'
 import { Modal } from './layout/modal'
 import { Title } from './widgets/title'
 import { Input } from './widgets/input'
 import { Select } from './widgets/select'
+import { SimpleLinkButton } from './buttons/simple-link-button'
+import { useSafeLayoutEffect } from 'web/hooks/use-safe-layout-effect'
 
 export const SORTS = [
   { label: 'Newest', value: 'newest' },
@@ -75,6 +70,7 @@ type AdditionalFilter = {
   tag?: string
   excludeContractIds?: string[]
   groupSlug?: string
+  facetFilters?: string[]
 }
 
 export function ContractSearch(props: {
@@ -90,7 +86,6 @@ export function ContractSearch(props: {
     hideGroupLink?: boolean
     hideQuickBet?: boolean
     noLinkAvatar?: boolean
-    showProbChange?: boolean
   }
   headerClassName?: string
   persistPrefix?: string
@@ -133,18 +128,17 @@ export function ContractSearch(props: {
       numPages: 1,
       pages: [] as Contract[][],
       showTime: null as ShowTime | null,
-      showProbChange: false,
     },
     !persistPrefix
       ? undefined
-      : { key: `${persistPrefix}-search`, store: historyStore() }
+      : { key: `${persistPrefix}-search`, store: inMemoryStore() }
   )
 
   const searchParams = useRef<SearchParameters | null>(null)
-  const searchParamsStore = historyStore<SearchParameters>()
+  const searchParamsStore = inMemoryStore<SearchParameters>()
   const requestId = useRef(0)
 
-  useLayoutEffect(() => {
+  useSafeLayoutEffect(() => {
     if (persistPrefix) {
       const params = searchParamsStore.get(`${persistPrefix}-params`)
       if (params !== undefined) {
@@ -187,17 +181,23 @@ export function ContractSearch(props: {
         const newPage = results.hits as any as Contract[]
         const showTime =
           sort === 'close-date' || sort === 'resolve-date' ? sort : null
-        const showProbChange = sort === 'daily-score'
         const pages = freshQuery ? [newPage] : [...state.pages, newPage]
-        setState({ numPages: results.nbPages, pages, showTime, showProbChange })
+        setState({ numPages: results.nbPages, pages, showTime })
         if (freshQuery && isWholePage) window.scrollTo(0, 0)
       }
     }
   }
 
+  // Always do first query when loading search page, unless going back in history.
+  const [firstQuery, setFirstQuery] = usePersistentState(true, {
+    key: `${persistPrefix}-first-query`,
+    store: historyStore(),
+  })
+
   const onSearchParametersChanged = useRef(
     debounce((params) => {
-      if (!isEqual(searchParams.current, params)) {
+      if (!isEqual(searchParams.current, params) || firstQuery) {
+        setFirstQuery(false)
         if (persistPrefix) {
           searchParamsStore.set(`${persistPrefix}-params`, params)
         }
@@ -206,12 +206,6 @@ export function ContractSearch(props: {
       }
     }, 100)
   ).current
-
-  const updatedCardUIOptions = useMemo(() => {
-    if (cardUIOptions?.showProbChange === undefined && state.showProbChange)
-      return { ...cardUIOptions, showProbChange: true }
-    return cardUIOptions
-  }, [cardUIOptions, state.showProbChange])
 
   const contracts = state.pages
     .flat()
@@ -253,7 +247,7 @@ export function ContractSearch(props: {
           showTime={state.showTime ?? undefined}
           onContractClick={onContractClick}
           highlightOptions={highlightOptions}
-          cardUIOptions={updatedCardUIOptions}
+          cardUIOptions={cardUIOptions}
         />
       )}
     </Col>
@@ -301,8 +295,6 @@ function ContractSearchControls(props: {
           store: urlParamStore(router),
         }
   )
-
-  const isMobile = useIsMobile()
 
   const sortKey = `${persistPrefix}-search-sort`
   const savedSort = safeLocalStorage()?.getItem(sortKey)
@@ -379,6 +371,7 @@ function ContractSearchControls(props: {
     additionalFilter?.groupSlug
       ? `groupLinks.slug:${additionalFilter.groupSlug}`
       : '',
+    ...(additionalFilter?.facetFilters ?? []),
   ]
   const facetFilters = query
     ? additionalFilters
@@ -439,7 +432,7 @@ function ContractSearchControls(props: {
 
   return (
     <Col className={clsx('bg-greyscale-1 top-0 z-20 gap-3 pb-3', className)}>
-      <Row className="gap-1 sm:gap-2">
+      <Row className="items-center gap-1 sm:gap-2">
         <Input
           type="text"
           value={query}
@@ -449,33 +442,23 @@ function ContractSearchControls(props: {
           className="w-full"
           autoFocus={autoFocus}
         />
-        {!isMobile && !query && (
-          <SearchFilters
-            filter={filter}
-            selectFilter={selectFilter}
-            hideOrderSelector={hideOrderSelector}
-            selectSort={selectSort}
-            sort={sort}
-            className={'flex flex-row gap-2'}
-            includeProbSorts={includeProbSorts}
+        {query ? (
+          <SimpleLinkButton
+            getUrl={() => window.location.href}
+            tooltip="Copy link to search results"
           />
-        )}
-        {isMobile && !query && (
-          <>
-            <MobileSearchBar
-              children={
-                <SearchFilters
-                  filter={filter}
-                  selectFilter={selectFilter}
-                  hideOrderSelector={hideOrderSelector}
-                  selectSort={selectSort}
-                  sort={sort}
-                  className={'flex flex-col gap-4'}
-                  includeProbSorts={includeProbSorts}
-                />
-              }
+        ) : (
+          <ModalOnMobile>
+            <SearchFilters
+              filter={filter}
+              selectFilter={selectFilter}
+              hideOrderSelector={hideOrderSelector}
+              selectSort={selectSort}
+              sort={sort}
+              className={'flex flex-row gap-2'}
+              includeProbSorts={includeProbSorts}
             />
-          </>
+          </ModalOnMobile>
         )}
       </Row>
 
@@ -569,25 +552,28 @@ export function SearchFilters(props: {
   )
 }
 
-export function MobileSearchBar(props: { children: ReactNode }) {
+export function ModalOnMobile(props: { children: ReactNode }) {
   const { children } = props
   const [openFilters, setOpenFilters] = useState(false)
   return (
     <>
-      <Button color="gray-white" onClick={() => setOpenFilters(true)}>
-        <AdjustmentsIcon className="my-auto h-7" />
-      </Button>
-      <Modal
-        open={openFilters}
-        setOpen={setOpenFilters}
-        position="top"
-        className="rounded-lg bg-white px-4 pb-4"
-      >
-        <Col>
-          <Title text="Filter Markets" />
-          {children}
-        </Col>
-      </Modal>
+      <div className="contents sm:hidden">
+        <Button color="gray-white" onClick={() => setOpenFilters(true)}>
+          <AdjustmentsIcon className="my-auto h-7" />
+        </Button>
+        <Modal
+          open={openFilters}
+          setOpen={setOpenFilters}
+          position="top"
+          className="rounded-lg bg-white px-4 pb-4"
+        >
+          <Col>
+            <Title text="Filter Markets" />
+            {children}
+          </Col>
+        </Modal>
+      </div>
+      <div className="hidden sm:contents">{children}</div>
     </>
   )
 }

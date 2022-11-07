@@ -10,7 +10,7 @@ import { AnyContractType, Contract } from 'common/contract'
 import { PAST_BETS } from 'common/user'
 import { ContractBetsTable } from '../bet/bets-list'
 import { Spacer } from '../layout/spacer'
-import { Tabs } from '../layout/tabs'
+import { ControlledTabs } from '../layout/tabs'
 import { Col } from '../layout/col'
 import { LoadingIndicator } from 'web/components/widgets/loading-indicator'
 import { useComments } from 'web/hooks/use-comments'
@@ -44,6 +44,9 @@ export function ContractTabs(props: {
   comments: ContractComment[]
   answerResponse?: Answer | undefined
   onCancelAnswerResponse?: () => void
+  blockedUserIds: string[]
+  activeIndex: number
+  setActiveIndex: (i: number) => void
 }) {
   const {
     contract,
@@ -52,6 +55,9 @@ export function ContractTabs(props: {
     comments,
     answerResponse,
     onCancelAnswerResponse,
+    blockedUserIds,
+    activeIndex,
+    setActiveIndex,
   } = props
 
   const yourTrades = (
@@ -71,6 +77,7 @@ export function ContractTabs(props: {
           comments={comments}
           answerResponse={answerResponse}
           onCancelAnswerResponse={onCancelAnswerResponse}
+          blockedUserIds={blockedUserIds}
         />
       ),
     },
@@ -85,7 +92,15 @@ export function ContractTabs(props: {
   )
 
   return (
-    <Tabs className="mb-4" currentPageForAnalytics={'contract'} tabs={tabs} />
+    <ControlledTabs
+      className="mb-4"
+      currentPageForAnalytics={'contract'}
+      tabs={tabs}
+      activeIndex={activeIndex}
+      onClick={(title, i) => {
+        setActiveIndex(i)
+      }}
+    />
   )
 }
 
@@ -94,10 +109,15 @@ const CommentsTabContent = memo(function CommentsTabContent(props: {
   comments: ContractComment[]
   answerResponse?: Answer
   onCancelAnswerResponse?: () => void
+  blockedUserIds: string[]
 }) {
-  const { contract, answerResponse, onCancelAnswerResponse } = props
+  const { contract, answerResponse, onCancelAnswerResponse, blockedUserIds } =
+    props
   const tips = useTipTxns({ contractId: contract.id })
-  const comments = useComments(contract.id) ?? props.comments
+  const comments = (useComments(contract.id) ?? props.comments).filter(
+    (c) => !blockedUserIds.includes(c.userId)
+  )
+
   const [sort, setSort] = usePersistentState<'Newest' | 'Best'>('Newest', {
     key: `contract-comments-sort`,
     store: storageStore(safeLocalStorage()),
@@ -184,9 +204,7 @@ const BetsTabContent = memo(function BetsTabContent(props: {
   const end = start + ITEMS_PER_PAGE
 
   const lps = useLiquidity(contract.id) ?? []
-  const visibleBets = bets.filter(
-    (bet) => !bet.isAnte && !bet.isRedemption && bet.amount !== 0
-  )
+  const visibleBets = bets.filter((bet) => !bet.isAnte) // on top of main contract page bet filters
   const visibleLps = lps.filter(
     (l) =>
       !l.isAnte &&
@@ -233,8 +251,6 @@ const BetsTabContent = memo(function BetsTabContent(props: {
         totalItems={items.length}
         setPage={setPage}
         scrollToTop
-        nextTitle={'Older'}
-        prevTitle={'Newer'}
       />
     </>
   )

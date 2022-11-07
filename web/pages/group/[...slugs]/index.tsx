@@ -1,9 +1,11 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
+import Router from 'next/router'
+
 import { toast } from 'react-hot-toast'
 
-import { Group, GROUP_CHAT_SLUG } from 'common/group'
+import { Group } from 'common/group'
 import { Contract, listContractsByGroupSlug } from 'web/lib/firebase/contracts'
 import {
   addContractToGroup,
@@ -13,13 +15,18 @@ import {
   listMemberIds,
 } from 'web/lib/firebase/groups'
 import { Row } from 'web/components/layout/row'
-import { firebaseLogin, getUser, User } from 'web/lib/firebase/users'
+import {
+  firebaseLogin,
+  getUser,
+  getUsersBlockFacetFilters,
+  User,
+} from 'web/lib/firebase/users'
 import { Col } from 'web/components/layout/col'
-import { useUser } from 'web/hooks/use-user'
+import { usePrivateUser, useUser } from 'web/hooks/use-user'
 import {
   useGroup,
   useGroupContractIds,
-  useMemberIds,
+  useMemberGroupsSubscription,
 } from 'web/hooks/use-group'
 import { Leaderboard } from 'web/components/leaderboard'
 import { formatMoney } from 'common/util/format'
@@ -41,8 +48,10 @@ import { ArrowLeftIcon } from '@heroicons/react/solid'
 import { SelectMarketsModal } from 'web/components/contract-select-modal'
 import { BETTORS } from 'common/user'
 import { Page } from 'web/components/layout/page'
-import { Tabs } from 'web/components/layout/tabs'
-import { GroupOverview } from 'web/components/groups/group-overview'
+import { ControlledTabs } from 'web/components/layout/tabs'
+import { GroupAbout } from 'web/components/groups/group-about'
+import { HideGroupButton } from 'web/components/buttons/hide-group-button'
+import { HOUSE_BOT_USERNAME } from 'common/envs/constants'
 
 export const getStaticProps = fromPropz(getStaticPropz)
 export async function getStaticPropz(props: { params: { slugs: string[] } }) {
@@ -96,14 +105,7 @@ export async function getStaticPropz(props: { params: { slugs: string[] } }) {
 export async function getStaticPaths() {
   return { paths: [], fallback: 'blocking' }
 }
-const groupSubpages = [
-  undefined,
-  GROUP_CHAT_SLUG,
-  'overview',
-  'markets',
-  'leaderboards',
-  'about',
-] as const
+const groupSubpages = [undefined, 'markets', 'about', 'leaderboards'] as const
 
 export default function GroupPage(props: {
   group: Group | null
@@ -126,13 +128,21 @@ export default function GroupPage(props: {
     suggestedFilter: 'open',
     posts: [],
   }
-  const { creator, topTraders, topCreators, suggestedFilter, posts } = props
+  const {
+    creator,
+    topTraders,
+    topCreators,
+    suggestedFilter,
+    posts,
+    memberIds,
+  } = props
 
   const router = useRouter()
+
   const { slugs } = router.query as { slugs: string[] }
   const page = slugs?.[1] as typeof groupSubpages[number]
-  const tabIndex = ['overview', 'markets', 'leaderboards'].indexOf(
-    page === 'about' ? 'overview' : page ?? 'markets'
+  const tabIndex = ['markets', 'about', 'leaderboards'].indexOf(
+    page === 'about' ? 'about' : page ?? 'markets'
   )
 
   const group = useGroup(props.group?.id) ?? props.group
@@ -145,8 +155,17 @@ export default function GroupPage(props: {
   }
 
   const user = useUser()
+  const groupMembers = useMemberGroupsSubscription(user)
+  const privateUser = usePrivateUser()
   const isAdmin = useAdmin()
-  const memberIds = useMemberIds(group?.id ?? null) ?? props.memberIds
+  const isMember =
+    groupMembers?.some((g) => g.id === group?.id) ??
+    memberIds?.includes(user?.id ?? '_') ??
+    false
+  const [activeIndex, setActiveIndex] = useState(tabIndex)
+  useEffect(() => {
+    setActiveIndex(tabIndex)
+  }, [tabIndex])
 
   useSaveReferral(user, {
     defaultReferrerUsername: creator?.username,
@@ -157,7 +176,6 @@ export default function GroupPage(props: {
     return <Custom404 />
   }
   const isCreator = user && group && user.id === group.creatorId
-  const isMember = user ? memberIds.includes(user.id) : undefined
   const maxLeaderboardSize = 50
 
   return (
@@ -167,35 +185,34 @@ export default function GroupPage(props: {
         description={`Created by ${creator.name}. ${group.about}`}
         url={groupPath(group.slug)}
       />
-      <TopGroupNavBar group={group} isMember={isMember} />
+      <TopGroupNavBar
+        group={group}
+        isMember={isMember}
+        isBlocked={privateUser?.blockedGroupSlugs?.includes(group.slug)}
+      />
       <div className="relative hidden justify-self-end md:flex">
         <div className="absolute right-0 top-0 z-10">
           <JoinOrAddQuestionsButtons
             group={group}
             user={user}
             isMember={!!isMember}
+            isBlocked={privateUser?.blockedGroupSlugs?.includes(group.slug)}
           />
         </div>
       </div>
       <div className={'relative p-1 pt-0'}>
-        {/* TODO: Switching tabs should also update the group path */}
-        <Tabs
+        <ControlledTabs
+          activeIndex={activeIndex}
+          onClick={(title, index) => {
+            // concatenates the group slug with the subpage slug
+            const path = `/group/${group.slug}/${
+              groupSubpages[index + 1] ?? ''
+            }`
+            Router.push(path, undefined, { shallow: true })
+            setActiveIndex(index)
+          }}
           className={'mb-2'}
           tabs={[
-            {
-              title: 'Overview',
-              content: (
-                <GroupOverview
-                  group={group}
-                  posts={groupPosts}
-                  isEditable={!!isCreator || isAdmin}
-                  aboutPost={aboutPost}
-                  creator={creator}
-                  user={user}
-                  memberIds={memberIds}
-                />
-              ),
-            },
             {
               title: 'Markets',
               content: (
@@ -204,9 +221,26 @@ export default function GroupPage(props: {
                   user={user}
                   defaultSort={'score'}
                   defaultFilter={suggestedFilter}
-                  additionalFilter={{ groupSlug: group.slug }}
+                  additionalFilter={{
+                    groupSlug: group.slug,
+                    facetFilters: getUsersBlockFacetFilters(privateUser, true),
+                  }}
                   persistPrefix={`group-${group.slug}`}
                   includeProbSorts
+                />
+              ),
+            },
+            {
+              title: 'About',
+              content: (
+                <GroupAbout
+                  group={group}
+                  posts={groupPosts}
+                  isEditable={!!isCreator || isAdmin}
+                  aboutPost={aboutPost}
+                  creator={creator}
+                  user={user}
+                  isMember={isMember ?? false}
                 />
               ),
             },
@@ -214,6 +248,9 @@ export default function GroupPage(props: {
               title: 'Leaderboards',
               content: (
                 <Col>
+                  <div className="mb-4 text-gray-500">
+                    Updated every 15 minutes
+                  </div>
                   <div className="mt-4 flex flex-col gap-8 px-4 md:flex-row">
                     <GroupLeaderboard
                       topUsers={topTraders}
@@ -224,15 +261,15 @@ export default function GroupPage(props: {
                     <GroupLeaderboard
                       topUsers={topCreators}
                       title="🏅 Top creators"
-                      header="Market volume"
+                      header="Number of traders"
                       maxToShow={maxLeaderboardSize}
+                      noFormatting={true}
                     />
                   </div>
                 </Col>
               ),
             },
           ]}
-          defaultIndex={tabIndex}
         />
       </div>
     </Page>
@@ -242,17 +279,19 @@ export default function GroupPage(props: {
 export function TopGroupNavBar(props: {
   group: Group
   isMember: boolean | undefined
+  isBlocked?: boolean
 }) {
-  const { group, isMember } = props
+  const { group, isMember, isBlocked } = props
   const user = useUser()
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-gray-200 md:hidden lg:col-span-12">
       <Row className="items-center justify-between gap-2 bg-white px-2">
-        <Link href="/">
-          <a className="py-4 px-2 text-indigo-700 hover:text-gray-500">
-            <ArrowLeftIcon className="h-5 w-5" aria-hidden="true" />
-          </a>
+        <Link
+          href="/"
+          className="py-4 px-2 text-indigo-700 hover:text-gray-500"
+        >
+          <ArrowLeftIcon className="h-5 w-5" aria-hidden="true" />
         </Link>
         <h1 className="truncate text-lg font-medium text-indigo-700">
           {props.group.name}
@@ -261,6 +300,7 @@ export function TopGroupNavBar(props: {
           group={group}
           user={user}
           isMember={isMember}
+          isBlocked={isBlocked}
         />
       </Row>
     </header>
@@ -271,12 +311,15 @@ function JoinOrAddQuestionsButtons(props: {
   group: Group
   user: User | null | undefined
   isMember: boolean | undefined
+  isBlocked?: boolean
 }) {
-  const { group, user, isMember } = props
+  const { group, user, isMember, isBlocked } = props
 
   if (user === undefined || isMember === undefined) return <div />
 
-  return user && isMember ? (
+  return isBlocked ? (
+    <HideGroupButton groupSlug={group.slug} />
+  ) : user && isMember ? (
     <AddContractButton group={group} user={user} />
   ) : group.anyoneCanJoin ? (
     <JoinGroupButton group={group} user={user} />
@@ -290,9 +333,13 @@ function GroupLeaderboard(props: {
   title: string
   maxToShow: number
   header: string
+  noFormatting?: boolean
 }) {
-  const { topUsers, title, maxToShow, header } = props
+  const { title, maxToShow, header, noFormatting } = props
 
+  const topUsers = props.topUsers.filter(
+    (u) => u.user.username !== HOUSE_BOT_USERNAME
+  )
   const scoresByUser = topUsers.reduce((acc, { user, score }) => {
     acc[user.id] = score
     return acc
@@ -304,7 +351,13 @@ function GroupLeaderboard(props: {
       entries={topUsers.map((t) => t.user)}
       title={title}
       columns={[
-        { header, renderCell: (user) => formatMoney(scoresByUser[user.id]) },
+        {
+          header,
+          renderCell: (user) =>
+            noFormatting
+              ? scoresByUser[user.id]
+              : formatMoney(scoresByUser[user.id]),
+        },
       ]}
       maxToShow={maxToShow}
     />
@@ -366,9 +419,9 @@ function JoinGroupButton(props: {
 
   const follow = async () => {
     track('join group')
-    const userId = user ? user.id : (await firebaseLogin()).user.uid
+    if (!user) return await firebaseLogin()
 
-    toast.promise(joinGroup(group, userId), {
+    toast.promise(joinGroup(group, user.id), {
       loading: 'Following group...',
       success: 'Followed',
       error: "Couldn't follow group, try again?",
@@ -377,9 +430,7 @@ function JoinGroupButton(props: {
 
   return (
     <div>
-      <Button onClick={follow} color="blue">
-        Follow
-      </Button>
+      <Button onClick={follow}>Follow</Button>
     </div>
   )
 }

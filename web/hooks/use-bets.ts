@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Contract } from 'common/contract'
 import {
   Bet,
+  BetFilter,
   listenForBets,
   listenForLiveBets,
   listenForRecentBets,
@@ -9,30 +10,32 @@ import {
   withoutAnteBets,
 } from 'web/lib/firebase/bets'
 import { LimitBet } from 'common/bet'
-import { getUser } from 'web/lib/firebase/users'
 import { inMemoryStore, usePersistentState } from './use-persistent-state'
+import { useEffectCheckEquality } from 'web/hooks/use-effect-check-equality'
+import { useUsersById } from './use-user'
+import { uniq } from 'lodash'
+import { filterDefined } from 'common/util/array'
 
-export const useBets = (
-  contractId: string,
-  options?: { filterChallenges: boolean; filterRedemptions: boolean }
-) => {
+export const useBets = (contractId: string, options?: BetFilter) => {
   const [bets, setBets] = useState<Bet[] | undefined>()
-  const filterChallenges = !!options?.filterChallenges
-  const filterRedemptions = !!options?.filterRedemptions
-  useEffect(() => {
+  useEffectCheckEquality(() => {
     if (contractId)
-      return listenForBets(contractId, (bets) => {
-        if (filterChallenges || filterRedemptions)
-          setBets(
-            bets.filter(
-              (bet) =>
-                (filterChallenges ? !bet.challengeSlug : true) &&
-                (filterRedemptions ? !bet.isRedemption : true)
-            )
+      return listenForBets(
+        contractId,
+        (bets) => {
+          // we can't do this stuff in firestore because we can't query for
+          // when a field doesn't exist
+          const filteredBets = bets.filter(
+            (b) =>
+              (!options?.filterChallenges || !b.challengeSlug) &&
+              (!options?.filterAntes || !b.isAnte) &&
+              (!options?.filterRedemptions || !b.isRedemption)
           )
-        else setBets(bets)
-      })
-  }, [contractId, filterChallenges, filterRedemptions])
+          setBets(filteredBets.sort((b) => b.createdTime))
+        },
+        options
+      )
+  }, [contractId, options])
 
   return bets
 }
@@ -41,10 +44,9 @@ export const useBetsWithoutAntes = (contract: Contract, initialBets: Bet[]) => {
   const [bets, setBets] = useState<Bet[]>(
     withoutAnteBets(contract, initialBets)
   )
-
   useEffect(() => {
     return listenForBets(contract.id, (bets) => {
-      setBets(withoutAnteBets(contract, bets))
+      setBets(withoutAnteBets(contract, bets).sort((b) => b.createdTime))
     })
   }, [contract])
 
@@ -67,31 +69,15 @@ export const useUnfilledBets = (contractId: string) => {
 }
 
 export const useUnfilledBetsAndBalanceByUserId = (contractId: string) => {
-  const [data, setData] = useState<{
-    unfilledBets: LimitBet[]
-    balanceByUserId: { [userId: string]: number }
-  }>({ unfilledBets: [], balanceByUserId: {} })
+  const unfilledBets = useUnfilledBets(contractId) ?? []
 
-  useEffect(() => {
-    let requestCount = 0
+  const userIds = uniq(unfilledBets.map((b) => b.userId))
+  const users = filterDefined(useUsersById(userIds))
 
-    return listenForUnfilledBets(contractId, (unfilledBets) => {
-      requestCount++
-      const count = requestCount
-
-      Promise.all(unfilledBets.map((bet) => getUser(bet.userId))).then(
-        (users) => {
-          if (count === requestCount) {
-            const balanceByUserId = Object.fromEntries(
-              users.map((user) => [user.id, user.balance])
-            )
-            setData({ unfilledBets, balanceByUserId })
-          }
-        }
-      )
-    })
-  }, [contractId])
-  return data
+  const balanceByUserId = Object.fromEntries(
+    users.map((user) => [user.id, user.balance])
+  )
+  return { unfilledBets, balanceByUserId }
 }
 
 export const useLiveBets = (count: number) => {

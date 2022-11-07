@@ -133,7 +133,7 @@ export default function PostPage(props: {
             {user && user.id === post.creatorId ? (
               <RichEditPost post={post} />
             ) : (
-              <Content content={post.content} />
+              <Content size="lg" content={post.content} />
             )}
           </div>
         </div>
@@ -184,7 +184,10 @@ export function RichEditPost(props: { post: Post }) {
   const { post } = props
   const [editing, setEditing] = useState(false)
 
-  const editor = useTextEditor({ defaultValue: post.content })
+  const editor = useTextEditor({
+    defaultValue: post.content,
+    key: `post ${post?.id || ''}`,
+  })
 
   async function savePost() {
     if (!editor) return
@@ -214,7 +217,7 @@ export function RichEditPost(props: { post: Post }) {
     </>
   ) : (
     <Col>
-      <Content content={post.content} />
+      <Content size="lg" content={post.content} />
       <Row className="place-content-end">
         <Button
           color="gray-white"

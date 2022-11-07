@@ -34,9 +34,13 @@ import {
   sendNewUniqueBettorsEmail,
 } from './emails'
 import { filterDefined } from '../../common/util/array'
-import { getNotificationDestinationsForUser } from '../../common/user-notification-preferences'
+import {
+  getNotificationDestinationsForUser,
+  userIsBlocked,
+} from '../../common/user-notification-preferences'
 import { ContractFollow } from '../../common/follow'
-import { Badge } from 'common/badge'
+import { Badge } from '../../common/badge'
+import { createPushNotification } from './create-push-notification'
 const firestore = admin.firestore()
 
 type recipients_to_reason_texts = {
@@ -214,6 +218,7 @@ export const createCommentOrAnswerOrUpdatedContractNotification = async (
       return
     const privateUser = await getPrivateUser(userId)
     if (!privateUser) return
+    if (userIsBlocked(privateUser, sourceUser.id)) return
     const { sendToBrowser, sendToEmail } = getNotificationDestinationsForUser(
       privateUser,
       reason
@@ -841,14 +846,13 @@ export const createNewContractNotification = async (
   text: string,
   mentionedUserIds: string[]
 ) => {
-  if (contract.visibility !== 'public') return
-
   const sendNotificationsIfSettingsAllow = async (
     userId: string,
     reason: notification_reason_types
   ) => {
     const privateUser = await getPrivateUser(userId)
     if (!privateUser) return
+    if (userIsBlocked(privateUser, contractCreator.id)) return
     const { sendToBrowser, sendToEmail } = getNotificationDestinationsForUser(
       privateUser,
       reason
@@ -899,11 +903,13 @@ export const createNewContractNotification = async (
 
   // As it is coded now, the tag notification usurps the new contract notification
   // It'd be easy to append the reason to the eventId if desired
-  for (const followerUserId of followerUserIds) {
-    await sendNotificationsIfSettingsAllow(
-      followerUserId,
-      'contract_from_followed_user'
-    )
+  if (contract.visibility === 'public') {
+    for (const followerUserId of followerUserIds) {
+      await sendNotificationsIfSettingsAllow(
+        followerUserId,
+        'contract_from_followed_user'
+      )
+    }
   }
   for (const mentionedUserId of mentionedUserIds) {
     await sendNotificationsIfSettingsAllow(mentionedUserId, 'tagged_user')
@@ -945,16 +951,11 @@ export const createContractResolvedNotifications = async (
     if (resolutionText === 'MKT' && resolutionValue)
       resolutionText = `${resolutionValue}`
   }
-
-  const idempotencyKey = contract.id + '-resolved'
-  const createBrowserNotification = async (
+  const constructNotification = (
     userId: string,
     reason: notification_reason_types
-  ) => {
-    const notificationRef = firestore
-      .collection(`/users/${userId}/notifications`)
-      .doc(idempotencyKey)
-    const notification: Notification = {
+  ): Notification => {
+    return {
       id: idempotencyKey,
       userId,
       reason,
@@ -979,6 +980,17 @@ export const createContractResolvedNotifications = async (
         userPayout: resolutionData.userPayouts[userId] ?? 0,
       } as ContractResolutionData,
     }
+  }
+
+  const idempotencyKey = contract.id + '-resolved'
+  const createBrowserNotification = async (
+    userId: string,
+    reason: notification_reason_types
+  ) => {
+    const notificationRef = firestore
+      .collection(`/users/${userId}/notifications`)
+      .doc(idempotencyKey)
+    const notification = constructNotification(userId, reason)
     return await notificationRef.set(removeUndefinedProps(notification))
   }
 
@@ -989,10 +1001,8 @@ export const createContractResolvedNotifications = async (
     if (!stillFollowingContract(userId) || creator.id == userId) return
     const privateUser = await getPrivateUser(userId)
     if (!privateUser) return
-    const { sendToBrowser, sendToEmail } = getNotificationDestinationsForUser(
-      privateUser,
-      reason
-    )
+    const { sendToBrowser, sendToEmail, sendToMobile } =
+      getNotificationDestinationsForUser(privateUser, reason)
 
     // Browser notifications
     if (sendToBrowser) {
@@ -1013,6 +1023,18 @@ export const createContractResolvedNotifications = async (
         resolutionData.resolutionProbability,
         resolutionData.resolutions
       )
+
+    if (sendToMobile) {
+      const notification = constructNotification(userId, reason)
+      await createPushNotification(
+        notification,
+        privateUser,
+        contract.question.length > 50
+          ? contract.question.slice(0, 50) + '...'
+          : contract.question,
+        `Resolved: ${resolutionText}`
+      )
+    }
   }
 
   const contractFollowersIds = (

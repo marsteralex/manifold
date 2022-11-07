@@ -6,6 +6,8 @@ import {
   listenForDateDocs,
   listenForPost,
 } from 'web/lib/firebase/posts'
+import { useEffectCheckEquality } from './use-effect-check-equality'
+import { inMemoryStore, usePersistentState } from './use-persistent-state'
 
 export const usePost = (postId: string | undefined) => {
   const [post, setPost] = useState<Post | null | undefined>()
@@ -19,7 +21,7 @@ export const usePost = (postId: string | undefined) => {
 
 export const usePosts = (postIds: string[]) => {
   const [posts, setPosts] = useState<Post[]>([])
-  useEffect(() => {
+  useEffectCheckEquality(() => {
     if (postIds.length === 0) return
     setPosts([])
 
@@ -43,12 +45,20 @@ export const usePosts = (postIds: string[]) => {
     .sort((a, b) => b.createdTime - a.createdTime)
 }
 
-export const useAllPosts = (limit?: number) => {
-  const [posts, setPosts] = useState<Post[]>([])
+export const useAllPosts = (excludeAboutPosts?: boolean, limit?: number) => {
+  const [posts, setPosts] = usePersistentState<Post[]>([], {
+    key: 'all-posts',
+    store: inMemoryStore(),
+  })
+
   useEffect(() => {
     getAllPosts().then(setPosts)
-  }, [])
-  return posts.sort((a, b) => b.createdTime - a.createdTime).slice(0, limit)
+  }, [setPosts])
+
+  return posts
+    .filter((post) => (excludeAboutPosts ? !post.isGroupAboutPost : true))
+    .sort((a, b) => b.createdTime - a.createdTime)
+    .slice(0, limit)
 }
 
 export const useDateDocs = () => {

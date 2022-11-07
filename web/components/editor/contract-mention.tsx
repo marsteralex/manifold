@@ -5,10 +5,10 @@ import {
   ReactNodeViewRenderer,
 } from '@tiptap/react'
 import clsx from 'clsx'
-import { useContract } from 'web/hooks/use-contract'
 import { ContractMention } from 'web/components/contract/contract-mention'
 import Link from 'next/link'
 import { contractMentionSuggestion } from './contract-mention-suggestion'
+import { useContract } from 'web/hooks/use-contracts'
 
 const name = 'contract-mention-component'
 
@@ -21,10 +21,11 @@ const ContractMentionComponent = (props: any) => {
       {contract ? (
         <ContractMention contract={contract} />
       ) : label ? (
-        <Link href={label}>
-          <a className="rounded-sm !text-indigo-700 hover:bg-indigo-50">
-            {label}
-          </a>
+        <Link
+          href={label}
+          className="rounded-sm !text-indigo-700 hover:bg-indigo-50"
+        >
+          {label}
         </Link>
       ) : (
         '[loading...]'

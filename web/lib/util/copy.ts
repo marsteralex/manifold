@@ -6,7 +6,13 @@
 // Internet Explorer: The clipboard feature may be disabled by
 // an administrator. By default a prompt is shown the first
 // time the clipboard is used (per session).
+import { postMessageToNative } from 'web/components/native-message-listener'
+import { getIsNative } from 'web/lib/native/is-native'
+
 export function copyToClipboard(text: string) {
+  if (getIsNative()) {
+    postMessageToNative('copyToClipboard', text)
+  }
   if (navigator.clipboard) {
     navigator.clipboard.writeText(text)
   } else if (

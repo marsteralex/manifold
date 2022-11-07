@@ -54,6 +54,16 @@ module.exports = {
         destination: '/stats',
         permanent: true,
       },
+      {
+        source: '/privacy',
+        destination: '/privacy.html',
+        permanent: true,
+      },
+      {
+        source: '/terms',
+        destination: '/terms.html',
+        permanent: true,
+      },
     ]
   },
 }

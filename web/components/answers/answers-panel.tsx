@@ -4,7 +4,7 @@ import { ChatIcon } from '@heroicons/react/outline'
 
 import { FreeResponseContract, MultipleChoiceContract } from 'common/contract'
 import { Col } from '../layout/col'
-import { useUser } from 'web/hooks/use-user'
+import { usePrivateUser, useUser } from 'web/hooks/use-user'
 import { getDpmOutcomeProbability } from 'common/calculate-dpm'
 import { useAnswers } from 'web/hooks/use-answers'
 import { tradingAllowed } from 'web/lib/firebase/contracts'
@@ -25,7 +25,6 @@ import { Button } from 'web/components/buttons/button'
 import { useAdmin } from 'web/hooks/use-admin'
 import { CHOICE_ANSWER_COLORS } from '../charts/contract/choice'
 import { useChartAnswers } from '../charts/contract/choice'
-import { needsAdminToResolve } from 'web/lib/util/admin'
 
 export function getAnswerColor(answer: Answer, answersArray: string[]) {
   const colorIndex = answersArray.indexOf(answer.text)
@@ -71,6 +70,7 @@ export function AnswersPanel(props: {
   )
 
   const user = useUser()
+  const privateUser = usePrivateUser()
 
   const [resolveOption, setResolveOption] = useState<
     'CHOOSE' | 'CHOOSE_MULTIPLE' | 'CANCEL' | undefined
@@ -167,24 +167,25 @@ export function AnswersPanel(props: {
         <div className="pb-4 text-gray-500">No answers yet...</div>
       )}
 
-      {outcomeType === 'FREE_RESPONSE' && tradingAllowed(contract) && (
-        <CreateAnswerPanel contract={contract} />
-      )}
-
-      {(user?.id === creatorId || (isAdmin && needsAdminToResolve(contract))) &&
-        !resolution && (
-          <>
-            <Spacer h={2} />
-            <AnswerResolvePanel
-              isAdmin={isAdmin}
-              isCreator={user?.id === creatorId}
-              contract={contract}
-              resolveOption={resolveOption}
-              setResolveOption={setResolveOption}
-              chosenAnswers={chosenAnswers}
-            />
-          </>
+      {outcomeType === 'FREE_RESPONSE' &&
+        tradingAllowed(contract) &&
+        !privateUser?.blockedByUserIds.includes(contract.creatorId) && (
+          <CreateAnswerPanel contract={contract} />
         )}
+
+      {(user?.id === creatorId || isAdmin) && !resolution && (
+        <>
+          <Spacer h={2} />
+          <AnswerResolvePanel
+            isAdmin={isAdmin}
+            isCreator={user?.id === creatorId}
+            contract={contract}
+            resolveOption={resolveOption}
+            setResolveOption={setResolveOption}
+            chosenAnswers={chosenAnswers}
+          />
+        </>
+      )}
     </Col>
   )
 }

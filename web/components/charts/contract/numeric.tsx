@@ -9,7 +9,7 @@ import { NUMERIC_GRAPH_COLOR } from 'common/numeric-constants'
 import { TooltipProps, formatPct } from '../helpers'
 import { DistributionPoint, DistributionChart } from '../generic-charts'
 
-const MARGIN = { top: 20, right: 10, bottom: 20, left: 40 }
+const MARGIN = { top: 20, right: 40, bottom: 20, left: 10 }
 const MARGIN_X = MARGIN.left + MARGIN.right
 const MARGIN_Y = MARGIN.top + MARGIN.bottom
 
@@ -26,12 +26,13 @@ const getNumericChartData = (contract: NumericContract) => {
 const NumericChartTooltip = (
   props: TooltipProps<number, DistributionPoint>
 ) => {
-  const { data, x, xScale } = props
+  const { prev, x, xScale } = props
   const amount = xScale.invert(x)
+  if (!prev) return null
   return (
     <>
       <span className="text-semibold mr-2">{formatLargeNumber(amount)}</span>
-      <span className="text-greyscale-6">{formatPct(data.y, 2)}</span>
+      <span className="text-greyscale-6">{formatPct(prev.y, 2)}</span>
     </>
   )
 }

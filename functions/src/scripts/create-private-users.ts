@@ -22,7 +22,11 @@ async function main() {
       id: user.id,
       email,
       username,
-      notificationPreferences: getDefaultNotificationPreferences(user.id),
+      notificationPreferences: getDefaultNotificationPreferences(),
+      blockedUserIds: [],
+      blockedByUserIds: [],
+      blockedContractIds: [],
+      blockedGroupSlugs: [],
     }
 
     if (user.totalDeposits === undefined) {

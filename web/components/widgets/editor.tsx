@@ -13,7 +13,7 @@ import {
 } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import clsx from 'clsx'
-import { useCallback, useEffect } from 'react'
+import { ReactNode, useCallback, useEffect } from 'react'
 import { DisplayContractMention } from '../editor/contract-mention'
 import { DisplayMention } from '../editor/mention'
 import GridComponent from '../editor/tiptap-grid-cards'
@@ -33,6 +33,7 @@ import { StickyFormatMenu } from '../editor/sticky-format-menu'
 import TiptapTweet from '../editor/tiptap-tweet'
 import { Upload, useUploadMutation } from '../editor/upload-extension'
 import { insertContent } from '../editor/utils'
+import { EmojiExtension } from '../editor/emoji/emoji-extension'
 
 const DisplayImage = Image.configure({
   HTMLAttributes: {
@@ -49,11 +50,7 @@ const DisplayLink = Link.extend({
       0,
     ]
   },
-}).configure({
-  HTMLAttributes: {
-    class: clsx('no-underline !text-indigo-700', linkClass),
-  },
-})
+}).configure({ HTMLAttributes: { class: linkClass } })
 
 export const editorExtensions = (simple = false): Extensions => [
   StarterKit.configure({
@@ -61,6 +58,7 @@ export const editorExtensions = (simple = false): Extensions => [
     horizontalRule: simple ? false : {},
   }),
   simple ? DisplayImage : Image,
+  EmojiExtension,
   DisplayLink,
   DisplayMention,
   DisplayContractMention,
@@ -74,19 +72,25 @@ export const editorExtensions = (simple = false): Extensions => [
   Upload,
 ]
 
-const proseClass = clsx(
-  'prose prose-p:my-0 prose-ul:my-0 prose-ol:my-0 prose-li:my-0 prose-blockquote:not-italic max-w-none prose-quoteless leading-relaxed',
-  'font-light prose-a:font-light prose-blockquote:font-light prose-sm'
-)
+export const proseClass = (size: 'sm' | 'md' | 'lg') =>
+  clsx(
+    'prose prose-ul:my-0 prose-ol:my-0 prose-li:my-0 max-w-none prose-quoteless leading-relaxed',
+    'prose-a:text-indigo-700 prose-a:no-underline',
+    size === 'sm' ? 'prose-sm' : 'text-md',
+    size !== 'lg' && 'prose-p:my-0',
+    'text-greyscale-7 prose-blockquote:text-greyscale-6',
+    'prose-a:font-light prose-blockquote:font-light font-light'
+  )
 
 export function useTextEditor(props: {
   placeholder?: string
   max?: number
   defaultValue?: Content
-  simple?: boolean
+  size?: 'sm' | 'md' | 'lg'
   key?: string // unique key for autosave. If set, plz call `clearContent(true)` on submit to clear autosave
 }) {
-  const { placeholder, max, defaultValue, simple, key } = props
+  const { placeholder, max, defaultValue, size = 'md', key } = props
+  const simple = size === 'sm'
 
   const [content, saveContent] = usePersistentState<JSONContent | undefined>(
     undefined,
@@ -100,7 +104,7 @@ export function useTextEditor(props: {
   const save = useCallback(debounce(saveContent, 500), [])
 
   const editorClass = clsx(
-    proseClass,
+    proseClass(size),
     simple ? 'min-h-[4.25em]' : 'min-h-[7.5em]', // 1 em padding + 13/8 em * line count
     'max-h-[69vh] overflow-auto',
     'outline-none py-[.5em] px-4',
@@ -170,38 +174,31 @@ function isValidIframe(text: string) {
 
 export function TextEditor(props: {
   editor: Editor | null
-  children?: React.ReactNode // additional toolbar buttons
+  children?: ReactNode // additional toolbar buttons
 }) {
   const { editor, children } = props
-  const upload = editor?.storage.upload.mutation ?? {}
 
   return (
-    <>
-      {/* matches input styling */}
-      <div className="w-full overflow-hidden rounded-lg border border-gray-300 bg-white shadow-sm transition-colors focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500">
-        <FloatingFormatMenu editor={editor} />
-        <EditorContent editor={editor} />
-        <StickyFormatMenu editor={editor}>{children}</StickyFormatMenu>
-      </div>
-      {upload.isLoading && <span className="text-xs">Uploading image...</span>}
-      {upload.isError && (
-        <span className="text-error text-xs">Error uploading image :(</span>
-      )}
-    </>
+    // matches input styling
+    <div className="w-full overflow-hidden rounded-lg border border-gray-300 bg-white shadow-sm transition-colors focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500">
+      <FloatingFormatMenu editor={editor} advanced={!children} />
+      <EditorContent editor={editor} />
+      <StickyFormatMenu editor={editor}>{children}</StickyFormatMenu>
+    </div>
   )
 }
 
 export function RichContent(props: {
   content: JSONContent | string
   className?: string
-  smallImage?: boolean
+  size?: 'sm' | 'md' | 'lg'
 }) {
-  const { className, content, smallImage } = props
+  const { className, content, size = 'md' } = props
   const editor = useEditor({
-    editorProps: { attributes: { class: proseClass } },
+    editorProps: { attributes: { class: proseClass(size) } },
     extensions: [
       StarterKit,
-      smallImage ? DisplayImage : Image,
+      size === 'md' ? DisplayImage : Image,
       DisplayLink.configure({ openOnClick: false }), // stop link opening twice (browser still opens)
       DisplayMention,
       DisplayContractMention,
@@ -230,16 +227,14 @@ export function RichContent(props: {
 // backwards compatibility: we used to store content as strings
 export function Content(props: {
   content: JSONContent | string
+  /** font/spacing */
+  size?: 'sm' | 'md' | 'lg'
   className?: string
-  smallImage?: boolean
 }) {
-  const { className, content } = props
+  const { className, size = 'md', content } = props
   return typeof content === 'string' ? (
     <Linkify
-      className={clsx(
-        className,
-        'whitespace-pre-line font-light leading-relaxed'
-      )}
+      className={clsx('whitespace-pre-line', proseClass(size), className)}
       text={content}
     />
   ) : (

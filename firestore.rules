@@ -91,7 +91,12 @@ service cloud.firestore {
       allow read: if userId == request.auth.uid || isAdmin();
       allow update: if (userId == request.auth.uid || isAdmin())
                        && request.resource.data.diff(resource.data).affectedKeys()
-                         .hasOnly(['apiKey', 'notificationPreferences', 'twitchInfo']);
+                         .hasOnly(['apiKey', 'notificationPreferences', 'twitchInfo', 'pushToken', 'rejectedPushNotificationsOn', 'blockedUserIds', 'blockedContractIds', 'blockedGroupSlugs','interestedInPushNotifications', 'hasSignedEula']);
+      allow update: if (request.auth != null || isAdmin())
+                       && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['blockedByUserIds'])
+                       && request.resource.data.blockedByUserIds.toSet().difference(resource.data.blockedByUserIds.toSet()).hasOnly([request.auth.uid]);
+
       allow delete: if (userId == request.auth.uid || isAdmin());              
     }
 
@@ -160,6 +165,11 @@ service cloud.firestore {
       allow read;
     }
 
+    match /reports/{reportId} {
+      allow read;
+      allow write: if request.auth.uid == request.resource.data.userId;
+    }
+
     // Note: `resource` = existing doc, `request.resource` = incoming doc
     match /manalinks/{slug} {
       // Anyone can view any manalink
@@ -217,7 +227,7 @@ service cloud.firestore {
         allow update: if isAdmin() || request.auth.uid == resource.data.creatorId
                          && request.resource.data.diff(resource.data)
                          .affectedKeys()
-                         .hasOnly(['name', 'content']);
+                         .hasOnly(['name', 'content', 'isGroupAboutPost']);
         allow delete: if isAdmin() || request.auth.uid == resource.data.creatorId;
          match /comments/{commentId} {
           	allow read;

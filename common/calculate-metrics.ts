@@ -1,4 +1,4 @@
-import { Dictionary, groupBy, last, partition, sum, sumBy, uniq } from 'lodash'
+import { Dictionary, last, partition, sum, sumBy, uniq } from 'lodash'
 import { calculatePayout, getContractBetMetrics } from './calculate'
 import { Bet, LimitBet } from './bet'
 import {
@@ -109,6 +109,41 @@ export const computeBinaryCpmmElasticity = (
   return safeYes - safeNo
 }
 
+export const computeBinaryCpmmElasticityFromAnte = (
+  ante: number,
+  betAmount = 50
+) => {
+  const pool = { YES: ante, NO: ante }
+  const p = 0.5
+  const contract = { pool, p } as any
+
+  const { newPool: poolY, newP: pY } = getBinaryCpmmBetInfo(
+    'YES',
+    betAmount,
+    contract,
+    undefined,
+    [],
+    {}
+  )
+  const resultYes = getCpmmProbability(poolY, pY)
+
+  const { newPool: poolN, newP: pN } = getBinaryCpmmBetInfo(
+    'NO',
+    betAmount,
+    contract,
+    undefined,
+    [],
+    {}
+  )
+  const resultNo = getCpmmProbability(poolN, pN)
+
+  // handle AMM overflow
+  const safeYes = Number.isFinite(resultYes) ? resultYes : 1
+  const safeNo = Number.isFinite(resultNo) ? resultNo : 0
+
+  return safeYes - safeNo
+}
+
 export const computeDpmElasticity = (
   contract: DPMContract,
   betAmount: number
@@ -131,7 +166,11 @@ export const computeVolume = (contractBets: Bet[], since: number) => {
   )
 }
 
-const calculateProbChangeSince = (descendingBets: Bet[], since: number) => {
+const calculateProbChangeSince = (
+  prob: number,
+  descendingBets: Bet[],
+  since: number
+) => {
   const newestBet = descendingBets[0]
   if (!newestBet) return 0
 
@@ -139,22 +178,22 @@ const calculateProbChangeSince = (descendingBets: Bet[], since: number) => {
 
   if (!betBeforeSince) {
     const oldestBet = last(descendingBets) ?? newestBet
-    return newestBet.probAfter - oldestBet.probBefore
+    return prob - oldestBet.probBefore
   }
 
-  return newestBet.probAfter - betBeforeSince.probAfter
+  return prob - betBeforeSince.probAfter
 }
 
-export const calculateProbChanges = (descendingBets: Bet[]) => {
+export const calculateProbChanges = (prob: number, descendingBets: Bet[]) => {
   const now = Date.now()
   const yesterday = now - DAY_MS
   const weekAgo = now - 7 * DAY_MS
   const monthAgo = now - 30 * DAY_MS
 
   return {
-    day: calculateProbChangeSince(descendingBets, yesterday),
-    week: calculateProbChangeSince(descendingBets, weekAgo),
-    month: calculateProbChangeSince(descendingBets, monthAgo),
+    day: calculateProbChangeSince(prob, descendingBets, yesterday),
+    week: calculateProbChangeSince(prob, descendingBets, weekAgo),
+    month: calculateProbChangeSince(prob, descendingBets, monthAgo),
   }
 }
 
@@ -235,34 +274,25 @@ export const calculateNewProfit = (
 }
 
 export const calculateMetricsByContract = (
-  bets: Bet[],
+  betsByContractId: Dictionary<Bet[]>,
   contractsById: Dictionary<Contract>
 ) => {
-  const betsByContract = groupBy(bets, (bet) => bet.contractId)
-  const unresolvedContracts = Object.keys(betsByContract)
-    .map((cid) => contractsById[cid])
-    .filter((c) => c && !c.isResolved)
-
-  return unresolvedContracts.map((c) => {
-    const bets = betsByContract[c.id] ?? []
-    const current = getContractBetMetrics(c, bets)
+  return Object.entries(betsByContractId).map(([contractId, bets]) => {
+    const contract = contractsById[contractId]
+    const current = getContractBetMetrics(contract, bets)
 
     let periodMetrics
-    if (c.mechanism === 'cpmm-1' && c.outcomeType === 'BINARY') {
+    if (contract.mechanism === 'cpmm-1' && contract.outcomeType === 'BINARY') {
       const periods = ['day', 'week', 'month'] as const
       periodMetrics = Object.fromEntries(
         periods.map((period) => [
           period,
-          calculatePeriodProfit(c, bets, period),
+          calculatePeriodProfit(contract, bets, period),
         ])
       )
     }
 
-    return removeUndefinedProps({
-      contractId: c.id,
-      ...current,
-      from: periodMetrics,
-    })
+    return removeUndefinedProps({ contractId, ...current, from: periodMetrics })
   })
 }
 

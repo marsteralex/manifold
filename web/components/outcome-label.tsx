@@ -98,27 +98,20 @@ export function FreeResponseOutcomeLabel(props: {
   )
 }
 
-export const OUTCOME_TO_COLOR = {
-  YES: 'primary',
-  NO: 'red-400',
-  CANCEL: 'yellow-400',
-  MKT: 'blue-400',
-}
-
 export function YesLabel() {
   return <span className="text-teal-500">YES</span>
 }
 
 export function HigherLabel() {
-  return <span className="text-primary">HIGHER</span>
+  return <span className="text-teal-500">HIGHER</span>
 }
 
 export function LowerLabel() {
-  return <span className="text-red-400">LOWER</span>
+  return <span className="text-scarlet-400">LOWER</span>
 }
 
 export function NoLabel() {
-  return <span className="text-red-400">NO</span>
+  return <span className="text-scarlet-400">NO</span>
 }
 
 export function CancelLabel() {
@@ -144,12 +137,12 @@ export function NumericValueLabel(props: { value: number }) {
 }
 
 export function AnswerNumberLabel(props: { number: string }) {
-  return <span className="text-primary">#{props.number}</span>
+  return <span className="text-teal-500">#{props.number}</span>
 }
 
 export function AnswerLabel(props: {
   answer: Answer
-  truncate: 'short' | 'long' | 'none'
+  truncate: 'short' | 'medium' | 'long' | 'none'
   className?: string
 }) {
   const { answer, truncate, className } = props
@@ -158,6 +151,8 @@ export function AnswerLabel(props: {
   let truncated = text
   if (truncate === 'short' && text.length > 20) {
     truncated = text.slice(0, 10) + '...' + text.slice(-10)
+  } else if (truncate === 'medium' && text.length > 30) {
+    truncated = text.slice(0, 20) + '...' + text.slice(-10)
   } else if (truncate === 'long' && text.length > 75) {
     truncated = text.slice(0, 75) + '...'
   }

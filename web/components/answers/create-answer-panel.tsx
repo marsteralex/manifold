@@ -162,7 +162,7 @@ export function CreateAnswerPanel(props: { contract: FreeResponseContract }) {
                   setError={setAmountError}
                   minimumAmount={1}
                   disabled={isSubmitting}
-                  showSliderOnMobile
+                  showSlider={true}
                 />
               </Col>
               <Col className="gap-3">
@@ -230,8 +230,8 @@ const AnswerError = (props: { text: string; level: answerErrorLevel }) => {
   const { text, level } = props
   const colorClass =
     {
-      error: 'text-red-500',
-      warning: 'text-orange-500',
+      error: 'text-scarlet-500',
+      warning: 'text-orange-600',
     }[level] ?? ''
   return (
     <div

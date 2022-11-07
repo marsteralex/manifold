@@ -11,7 +11,7 @@ import { Group } from 'common/group'
 import { ExpandingInput } from '../widgets/expanding-input'
 import { Button } from '../buttons/button'
 
-export function CreatePost(props: { group?: Group }) {
+export function CreatePostForm(props: { group?: Group }) {
   const [title, setTitle] = useState('')
   const [subtitle, setSubtitle] = useState('')
 
@@ -22,6 +22,7 @@ export function CreatePost(props: { group?: Group }) {
 
   const editor = useTextEditor({
     key: `post ${group?.id || ''}`,
+    size: 'lg',
   })
 
   const isValid =
@@ -58,7 +59,7 @@ export function CreatePost(props: { group?: Group }) {
           <div className="flex w-full flex-col">
             <label className="px-1 py-2">
               <span className="mb-1">
-                Title<span className={'text-red-700'}> *</span>
+                Title<span className={'text-scarlet-500'}> *</span>
               </span>
             </label>
             <ExpandingInput
@@ -71,7 +72,7 @@ export function CreatePost(props: { group?: Group }) {
             <Spacer h={6} />
             <label className="px-1 py-2">
               <span className="mb-1">
-                Subtitle<span className={'text-red-700'}> *</span>
+                Subtitle<span className={'text-scarlet-500'}> *</span>
               </span>
             </label>
             <ExpandingInput
@@ -84,29 +85,29 @@ export function CreatePost(props: { group?: Group }) {
             <Spacer h={6} />
             <label className="px-1 py-2">
               <span className="mb-1">
-                Content<span className={'text-red-700'}> *</span>
+                Content<span className={'text-scarlet-500'}> *</span>
               </span>
             </label>
             <TextEditor editor={editor} />
             <Spacer h={6} />
 
-            <Button
-              type="submit"
-              color="green"
-              size="xl"
-              loading={isSubmitting}
-              disabled={!isValid || editor.storage.upload.mutation.isLoading}
-              onClick={async () => {
-                setIsSubmitting(true)
-                await savePost(title)
-                setIsSubmitting(false)
-              }}
-            >
-              {isSubmitting ? 'Creating...' : 'Create a post'}
-            </Button>
-            {error !== '' && <div className="text-red-700">{error}</div>}
+            {error !== '' && <div className="text-scarlet-500">{error}</div>}
           </div>
         </form>
+        <Button
+          type="submit"
+          color="green"
+          size="xl"
+          loading={isSubmitting}
+          disabled={!isValid || editor.storage.upload.mutation.isLoading}
+          onClick={async () => {
+            setIsSubmitting(true)
+            await savePost(title)
+            setIsSubmitting(false)
+          }}
+        >
+          {isSubmitting ? 'Creating...' : 'Create a post'}
+        </Button>
       </div>
     </div>
   )

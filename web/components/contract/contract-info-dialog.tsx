@@ -1,6 +1,5 @@
 import { DotsHorizontalIcon } from '@heroicons/react/outline'
 import clsx from 'clsx'
-import dayjs from 'dayjs'
 import { useState } from 'react'
 import { capitalize } from 'lodash'
 import ChallengeIcon from 'web/lib/icons/challenge-icon'
@@ -29,6 +28,10 @@ import { CHALLENGES_ENABLED } from 'common/challenge'
 import { withTracking } from 'web/lib/service/analytics'
 import { QRCode } from '../widgets/qr-code'
 import { getShareUrl } from 'common/util/share'
+import { usePrivateUser } from 'web/hooks/use-user'
+import { BlockMarketButton } from 'web/components/buttons/block-market-button'
+import { formatTime } from 'web/lib/util/time'
+import { ReportButton } from 'web/components/buttons/report-button'
 
 export function ContractInfoDialog(props: {
   contract: Contract
@@ -36,7 +39,7 @@ export function ContractInfoDialog(props: {
   className?: string
 }) {
   const { contract, className, user } = props
-
+  const privateUser = usePrivateUser()
   const [open, setOpen] = useState(false)
   const isDev = useDev()
   const isAdmin = useAdmin()
@@ -45,8 +48,6 @@ export function ContractInfoDialog(props: {
   const wasUnlistedByCreator = contract.unlistedById
     ? contract.unlistedById === contract.creatorId
     : false
-
-  const formatTime = (dt: number) => dayjs(dt).format('MMM DD, YYYY hh:mm a')
 
   const {
     createdTime,
@@ -95,7 +96,18 @@ export function ContractInfoDialog(props: {
 
         <Modal open={open} setOpen={setOpen}>
           <Col className="gap-4 rounded bg-white p-6">
-            <Title className="!mt-0 !mb-0" text="This Market" />
+            <Row className={'justify-between'}>
+              <Title className="!mt-0 !mb-0" text="This Market" />
+              {user && (
+                <ReportButton
+                  contentType={'contract'}
+                  contentOwnerId={contract.creatorId}
+                  contentId={contract.id}
+                  contentName={'market'}
+                />
+              )}
+              {privateUser && <BlockMarketButton contractId={contract.id} />}
+            </Row>
 
             <Table>
               <tbody>
@@ -142,7 +154,15 @@ export function ContractInfoDialog(props: {
 
                 <tr>
                   <td>
-                    <span className="mr-1">Volume</span>
+                    <span className="mr-1">24 hour volume</span>
+                    <InfoTooltip text="The amount bought or sold in the last 24 hours" />
+                  </td>
+                  <td>{formatMoney(contract.volume24Hours)}</td>
+                </tr>
+
+                <tr>
+                  <td>
+                    <span className="mr-1">Total volume</span>
                     <InfoTooltip text="Total amount bought or sold" />
                   </td>
                   <td>{formatMoney(contract.volume)}</td>
@@ -173,7 +193,9 @@ export function ContractInfoDialog(props: {
                   <td>Liquidity subsidies</td>
                   <td>
                     {mechanism === 'cpmm-1'
-                      ? formatMoney(contract.totalLiquidity)
+                      ? `${formatMoney(
+                          contract.totalLiquidity - contract.subsidyPool
+                        )} / ${formatMoney(contract.totalLiquidity)}`
                       : formatMoney(100)}
                   </td>
                 </tr>
@@ -203,27 +225,26 @@ export function ContractInfoDialog(props: {
                     </td>
                   </tr>
                 )}
-                {user && (
-                  <tr>
-                    <td>{isAdmin ? '[ADMIN]' : ''} Unlisted</td>
-                    <td>
-                      <ShortToggle
-                        disabled={
-                          isUnlisted
-                            ? !(isAdmin || (isCreator && wasUnlistedByCreator))
-                            : !(isCreator || isAdmin)
-                        }
-                        on={contract.visibility === 'unlisted'}
-                        setOn={(b) =>
-                          updateContract(id, {
-                            visibility: b ? 'unlisted' : 'public',
-                            unlistedById: b ? user.id : '',
-                          })
-                        }
-                      />
-                    </td>
-                  </tr>
-                )}
+
+                <tr>
+                  <td>{isAdmin ? '[ADMIN]' : ''} Unlisted</td>
+                  <td>
+                    <ShortToggle
+                      disabled={
+                        isUnlisted
+                          ? !(isAdmin || (isCreator && wasUnlistedByCreator))
+                          : !(isCreator || isAdmin)
+                      }
+                      on={contract.visibility === 'unlisted'}
+                      setOn={(unlist) =>
+                        updateContract(id, {
+                          visibility: unlist ? 'unlisted' : 'public',
+                          unlistedById: unlist ? user?.id : '',
+                        })
+                      }
+                    />
+                  </td>
+                </tr>
               </tbody>
             </Table>
 

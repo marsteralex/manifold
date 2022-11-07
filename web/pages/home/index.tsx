@@ -1,13 +1,9 @@
-import React, { ReactNode, useEffect } from 'react'
+import React, { memo, ReactNode, useEffect } from 'react'
 import Router from 'next/router'
-import {
-  AdjustmentsIcon,
-  PencilAltIcon,
-  ArrowSmRightIcon,
-} from '@heroicons/react/solid'
+import { PencilAltIcon } from '@heroicons/react/solid'
 import { PlusCircleIcon, XCircleIcon } from '@heroicons/react/outline'
 import clsx from 'clsx'
-import { toast, Toaster } from 'react-hot-toast'
+import { toast } from 'react-hot-toast'
 import { Dictionary, sortBy, sum } from 'lodash'
 
 import { Page } from 'web/components/layout/page'
@@ -19,7 +15,11 @@ import { useSaveReferral } from 'web/hooks/use-save-referral'
 import { Sort } from 'web/components/contract-search'
 import { Group } from 'common/group'
 import { SiteLink } from 'web/components/widgets/site-link'
-import { useUser, useUserContractMetricsByProfit } from 'web/hooks/use-user'
+import {
+  usePrivateUser,
+  useUser,
+  useUserContractMetricsByProfit,
+} from 'web/hooks/use-user'
 import {
   useMemberGroupsSubscription,
   useTrendingGroups,
@@ -27,12 +27,17 @@ import {
 import { Button } from 'web/components/buttons/button'
 import { Row } from 'web/components/layout/row'
 import { ProfitChangeTable } from 'web/components/contract/prob-change-table'
-import { groupPath, joinGroup, leaveGroup } from 'web/lib/firebase/groups'
+import {
+  getGroup,
+  groupPath,
+  joinGroup,
+  leaveGroup,
+} from 'web/lib/firebase/groups'
 import { ContractMetrics } from 'common/calculate-metrics'
 import { ContractsGrid } from 'web/components/contract/contracts-grid'
 import { PillButton } from 'web/components/buttons/pill-button'
 import { filterDefined } from 'common/util/array'
-import { updateUser } from 'web/lib/firebase/users'
+import { getUsersBlockFacetFilters, updateUser } from 'web/lib/firebase/users'
 import { isArray, keyBy } from 'lodash'
 import { usePrefetch } from 'web/hooks/use-prefetch'
 import { Contract, CPMMBinaryContract } from 'common/contract'
@@ -44,7 +49,7 @@ import {
 } from 'web/hooks/use-contracts'
 import { LoadingIndicator } from 'web/components/widgets/loading-indicator'
 import { Input } from 'web/components/widgets/input'
-import { PinnedItems } from 'web/components/groups/group-overview'
+import { PinnedItems } from 'web/components/groups/group-about'
 import {
   getGlobalConfig,
   updateGlobalConfig,
@@ -65,7 +70,10 @@ import {
 import { ActivityLog } from 'web/components/activity-log'
 import { useRedirectIfSignedOut } from 'web/hooks/use-redirect-if-signed-out'
 import { LatestPosts } from '../latestposts'
-import { DailyStats } from '../../components/daily-stats'
+import GoToIcon from 'web/lib/icons/go-to-icon'
+import { DailyStats } from 'web/components/daily-stats'
+import HomeSettingsIcon from 'web/lib/icons/home-settings-icon'
+import { GroupCard } from '../groups'
 
 export async function getStaticProps() {
   const globalConfig = await getGlobalConfig()
@@ -78,9 +86,14 @@ export async function getStaticProps() {
 
 export default function Home(props: { globalConfig: GlobalConfig }) {
   const user = useUser()
+  const privateUser = usePrivateUser()
+  const groups = useMemberGroupsSubscription(user)
+  const shouldFilterDestiny = !groups?.find((g) => g.slug === 'destinygg')
+  const userBlockFacetFilters = getUsersBlockFacetFilters(privateUser).concat(
+    shouldFilterDestiny ? ['groupSlugs:-destinygg'] : []
+  )
   const isAdmin = useAdmin()
   const globalConfig = useGlobalConfig() ?? props.globalConfig
-
   useRedirectIfSignedOut()
   useTracking('view home')
 
@@ -96,19 +109,31 @@ export default function Home(props: { globalConfig: GlobalConfig }) {
     }
   }, [user, sections])
 
-  const trendingContracts = useTrendingContracts(6)
-  const newContracts = useNewContracts(6)
-  const dailyTrendingContracts = useContractsByDailyScoreNotBetOn(user?.id, 6)
+  const trendingContracts = useTrendingContracts(6, userBlockFacetFilters)
+  const newContracts = useNewContracts(6, userBlockFacetFilters)
+  const dailyTrendingContracts = useContractsByDailyScoreNotBetOn(
+    user?.id,
+    6,
+    userBlockFacetFilters
+  )
   const contractMetricsByProfit = useUserContractMetricsByProfit(
     user?.id ?? '_'
   )
 
-  const groups = useMemberGroupsSubscription(user)
   const trendingGroups = useTrendingGroups()
   const groupContracts = useContractsByDailyScoreGroups(
-    groups?.map((g) => g.slug)
+    groups?.map((g) => g.slug),
+    userBlockFacetFilters
   )
-  const latestPosts = useAllPosts(4)
+  const latestPosts = useAllPosts(true)
+    .filter(
+      (p) =>
+        !privateUser?.blockedUserIds.includes(p.creatorId) &&
+        !privateUser?.blockedUserIds.includes(p.creatorId)
+    )
+    // Remove "test" posts.
+    .filter((p) => !p.title.toLocaleLowerCase().split(' ').includes('test'))
+    .slice(0, 2)
 
   const [pinned, setPinned] = usePersistentState<JSX.Element[] | null>(null, {
     store: inMemoryStore(),
@@ -117,12 +142,29 @@ export default function Home(props: { globalConfig: GlobalConfig }) {
 
   useEffect(() => {
     const pinnedItems = globalConfig?.pinnedItems
+    const userIsBlocked = (userId: string) =>
+      privateUser?.blockedUserIds.includes(userId) ||
+      privateUser?.blockedByUserIds.includes(userId)
     if (pinnedItems) {
       const itemComponents = pinnedItems.map((element) => {
-        if (element.type === 'post') {
-          return <PostCard post={element.item as Post} />
-        } else if (element.type === 'contract') {
-          return <ContractCard contract={element.item as Contract} />
+        if (element?.type === 'post') {
+          const post = element.item as Post
+          if (!userIsBlocked(post.creatorId))
+            return <PostCard post={post} pinned={true} />
+        } else if (element?.type == 'group') {
+          const group = element.item as Group
+          if (!userIsBlocked(group.creatorId))
+            return <GroupCard group={group} pinned={true} />
+        } else if (element?.type === 'contract') {
+          const contract = element.item as Contract
+          if (
+            !userIsBlocked(contract.creatorId) &&
+            !privateUser?.blockedContractIds.includes(contract.id) &&
+            !privateUser?.blockedGroupSlugs.some((slug) =>
+              contract.groupSlugs?.includes(slug)
+            )
+          )
+            return <ContractCard contract={contract} pinned={true} />
         }
       })
       setPinned(
@@ -131,10 +173,18 @@ export default function Home(props: { globalConfig: GlobalConfig }) {
         ) as JSX.Element[]
       )
     }
-  }, [globalConfig, setPinned])
+  }, [
+    globalConfig,
+    privateUser?.blockedByUserIds,
+    privateUser?.blockedContractIds,
+    privateUser?.blockedGroupSlugs,
+    privateUser?.blockedUserIds,
+    setPinned,
+  ])
 
   const isLoading =
     !user ||
+    !privateUser ||
     !trendingContracts ||
     !newContracts ||
     !dailyTrendingContracts ||
@@ -143,19 +193,20 @@ export default function Home(props: { globalConfig: GlobalConfig }) {
 
   return (
     <Page>
-      <Toaster />
-
       <Col className="pm:mx-10 gap-4 px-4 pb-8 pt-4 sm:pt-0">
         <Row
-          className={'mb-2 w-full items-center justify-between gap-4 sm:gap-8'}
+          className={'mb-2 w-full items-center justify-between gap-2 sm:gap-8'}
         >
-          <Input
-            type="text"
-            placeholder={'Search'}
-            className="w-full"
-            onClick={() => Router.push('/search')}
-          />
-          <CustomizeButton justIcon />
+          <Row className="md:w-3/4">
+            <Input
+              type="text"
+              placeholder={'Search Manifold'}
+              className="w-full"
+              onClick={() => Router.push('/search')}
+              onChange={(e) => Router.push(`/search?q=${e.target.value}`)}
+            />
+            <CustomizeButton className="ml-1" justIcon />
+          </Row>
           <DailyStats user={user} />
         </Row>
 
@@ -169,16 +220,13 @@ export default function Home(props: { globalConfig: GlobalConfig }) {
                 score: trendingContracts,
                 newest: newContracts,
                 'daily-trending': dailyTrendingContracts,
-                'daily-movers': contractMetricsByProfit,
               },
               isAdmin,
               globalConfig,
-              pinned
+              pinned,
+              contractMetricsByProfit,
+              latestPosts
             )}
-
-            <ActivitySection />
-
-            <LatestPostsSection latestPosts={latestPosts} />
 
             {groups && groupContracts && trendingGroups.length > 0 ? (
               <>
@@ -188,7 +236,11 @@ export default function Home(props: { globalConfig: GlobalConfig }) {
                   myGroups={groups}
                   trendingGroups={trendingGroups}
                 />
-                {renderGroupSections(user, groups, groupContracts)}
+                <GroupSections
+                  user={user}
+                  groups={groups}
+                  groupContracts={groupContracts}
+                />
               </>
             ) : (
               <LoadingIndicator />
@@ -212,11 +264,13 @@ export default function Home(props: { globalConfig: GlobalConfig }) {
 }
 
 const HOME_SECTIONS = [
-  { label: 'Featured', id: 'featured' },
-  { label: 'Daily changed', id: 'daily-trending' },
+  { label: 'Trending', id: 'score', icon: '🔥' },
+  { label: 'Daily changed', id: 'daily-trending', icon: '📈' },
   { label: 'Your daily movers', id: 'daily-movers' },
-  { label: 'Trending', id: 'score' },
-  { label: 'New', id: 'newest' },
+  { label: 'Featured', id: 'featured', icon: '⭐' },
+  { label: 'New', id: 'newest', icon: '✨' },
+  { label: 'Live feed', id: 'live-feed', icon: '🔴' },
+  { label: 'Latest posts', id: 'latest-posts', icon: '📝' },
 ] as const
 
 export const getHomeItems = (sections: string[]) => {
@@ -226,10 +280,6 @@ export const getHomeItems = (sections: string[]) => {
   const itemsById = keyBy(HOME_SECTIONS, 'id')
   const sectionItems = filterDefined(sections.map((id) => itemsById[id]))
 
-  // Add new home section items to the top.
-  sectionItems.unshift(
-    ...HOME_SECTIONS.filter((item) => !sectionItems.includes(item))
-  )
   // Add unmentioned items to the end.
   sectionItems.push(
     ...HOME_SECTIONS.filter((item) => !sectionItems.includes(item))
@@ -242,44 +292,51 @@ export const getHomeItems = (sections: string[]) => {
 }
 
 function renderSections(
-  sections: { id: string; label: string }[],
+  sections: { id: string; label: string; icon?: string }[],
   sectionContracts: {
-    'daily-movers':
-      | {
-          contracts: CPMMBinaryContract[]
-          metrics: ContractMetrics[]
-        }
-      | undefined
     'daily-trending': CPMMBinaryContract[]
     newest: CPMMBinaryContract[]
     score: CPMMBinaryContract[]
   },
   isAdmin: boolean,
   globalConfig: GlobalConfig,
-  pinned: JSX.Element[]
+  pinned: JSX.Element[],
+  dailyMovers:
+    | {
+        contracts: CPMMBinaryContract[]
+        metrics: ContractMetrics[]
+      }
+    | undefined,
+  latestPosts: Post[]
 ) {
   type sectionTypes = typeof HOME_SECTIONS[number]['id']
 
   return (
     <>
       {sections.map((s) => {
-        const { id, label } = s as {
+        const { id, label, icon } = s as {
           id: sectionTypes
           label: string
+          icon: string | undefined
         }
-        if (id === 'daily-movers') {
-          return <DailyMoversSection key={id} data={sectionContracts[id]} />
-        }
-
-        if (id === 'featured') {
+        if (id === 'featured')
           return (
             <FeaturedSection
-              key={id}
+              key={'featured'}
               globalConfig={globalConfig}
               pinned={pinned}
               isAdmin={isAdmin}
             />
           )
+
+        if (id === 'live-feed') return <ActivitySection key={id} />
+
+        if (id === 'daily-movers') {
+          return <DailyMoversSection key={id} data={dailyMovers} />
+        }
+
+        if (id === 'latest-posts') {
+          return <LatestPostsSection key={id} latestPosts={latestPosts} />
         }
 
         const contracts = sectionContracts[id]
@@ -291,7 +348,7 @@ function renderSections(
               label={label}
               contracts={contracts}
               sort="daily-score"
-              showProbChange
+              icon={icon}
             />
           )
         }
@@ -301,6 +358,7 @@ function renderSections(
             label={label}
             contracts={contracts}
             sort={id as Sort}
+            icon={icon}
           />
         )
       })}
@@ -308,11 +366,12 @@ function renderSections(
   )
 }
 
-function renderGroupSections(
-  user: User,
-  groups: Group[],
+const GroupSections = memo(function GroupSections(props: {
+  user: User
+  groups: Group[]
   groupContracts: Dictionary<CPMMBinaryContract[]>
-) {
+}) {
+  const { user, groups, groupContracts } = props
   const filteredGroups = groups.filter((g) => groupContracts[g.slug])
   const orderedGroups = sortBy(filteredGroups, (g) =>
     // Sort by sum of top two daily scores.
@@ -348,58 +407,83 @@ function renderGroupSections(
       })}
     </>
   )
-}
+})
 
-function SectionHeader(props: {
+function HomeSectionHeader(props: {
   label: string
-  href: string
+  href?: string
   children?: ReactNode
+  icon?: string
 }) {
-  const { label, href, children } = props
+  const { label, href, children, icon } = props
 
   return (
-    <Row className="mb-3 items-center justify-between">
-      <SiteLink
-        className="text-xl"
-        href={href}
-        onClick={() => track('home click section header', { section: href })}
-      >
-        {label}{' '}
-        <ArrowSmRightIcon
-          className="mb-0.5 inline h-6 w-6 text-gray-500"
-          aria-hidden="true"
-        />
-      </SiteLink>
+    <Row className="bg-greyscale-1 text-greyscale-7 sticky top-0 z-20 my-1 items-center justify-between pb-2">
+      {icon != null && <div className="mr-2 inline">{icon}</div>}
+      {href ? (
+        <SiteLink
+          className="flex-1 text-lg md:text-xl"
+          href={href}
+          onClick={() => track('home click section header', { section: href })}
+        >
+          {label}
+          <GoToIcon className="text-greyscale-4 mb-1 ml-2 inline h-5 w-5" />
+        </SiteLink>
+      ) : (
+        <div className="flex-1 text-lg md:text-xl">{label}</div>
+      )}
       {children}
     </Row>
   )
 }
 
-function SearchSection(props: {
+const SearchSection = memo(function SearchSection(props: {
   label: string
   contracts: CPMMBinaryContract[]
   sort: Sort
   pill?: string
-  showProbChange?: boolean
+  icon?: string
 }) {
-  const { label, contracts, sort, pill, showProbChange } = props
+  const { label, contracts, sort, pill, icon } = props
 
   return (
     <Col>
-      <SectionHeader
+      <HomeSectionHeader
         label={label}
         href={`/search?s=${sort}${pill ? `&p=${pill}` : ''}`}
+        icon={icon}
       />
-      <ContractsGrid contracts={contracts} cardUIOptions={{ showProbChange }} />
+      <ContractsGrid contracts={contracts} showImageOnTopContract={true} />
     </Col>
   )
-}
+})
 
 function LatestPostsSection(props: { latestPosts: Post[] }) {
   const { latestPosts } = props
+  const user = useUser()
+
   return (
     <Col className="pt-4">
-      <SectionHeader label={'Latest Posts'} href="/latestposts" />
+      <Row className="flex items-center justify-between">
+        <HomeSectionHeader
+          label={'Latest Posts'}
+          href="/latestposts"
+          icon="📝"
+        />
+        <Col>
+          {user && (
+            <SiteLink
+              className="mb-3 text-xl"
+              href={'/create-post'}
+              onClick={() =>
+                track('home click create post', { section: 'create-post' })
+              }
+            >
+              <Button>Create Post</Button>
+            </SiteLink>
+          )}
+        </Col>
+      </Row>
       <LatestPosts latestPosts={latestPosts} />
     </Col>
   )
@@ -412,6 +496,7 @@ function FeaturedSection(props: {
 }) {
   const { globalConfig, pinned, isAdmin } = props
   const posts = useAllPosts()
+  const groups = useTrendingGroups()
 
   async function onSubmit(selectedItems: { itemId: string; type: string }[]) {
     if (globalConfig == null) return
@@ -428,6 +513,10 @@ function FeaturedSection(props: {
             if (contract == null) return null
 
             return { item: contract, type: 'contract' }
+          } else if (item.type === 'group') {
+            const group = await getGroup(item.itemId)
+            if (group == null) return null
+            return { item: group, type: 'group' }
           }
         })
         .filter((item) => item != null)
@@ -436,8 +525,8 @@ function FeaturedSection(props: {
       pinnedItems: [
         ...(globalConfig?.pinnedItems ?? []),
         ...(pinnedItems as {
-          item: Contract | Post
-          type: 'contract' | 'post'
+          item: Contract | Post | Group
+          type: 'contract' | 'post' | 'group'
         }[]),
       ],
     })
@@ -452,7 +541,8 @@ function FeaturedSection(props: {
   }
 
   return (
-    <Col>
+    <Col className="relative">
+      <HomeSectionHeader label={'Featured'} icon={'⭐'} />
       <PinnedItems
         posts={posts}
         isEditable={isAdmin}
@@ -460,6 +550,7 @@ function FeaturedSection(props: {
         onDeleteClicked={onDeleteClicked}
         onSubmit={onSubmit}
         modalMessage={'Pin posts or markets to the overview of this group.'}
+        groups={groups}
       />
     </Col>
   )
@@ -474,7 +565,7 @@ function GroupSection(props: {
 
   return (
     <Col>
-      <SectionHeader label={group.name} href={groupPath(group.slug)}>
+      <HomeSectionHeader label={group.name} href={groupPath(group.slug)}>
         <Button
           color="gray-white"
           onClick={() => {
@@ -492,16 +583,16 @@ function GroupSection(props: {
         >
           <XCircleIcon className={'h-5 w-5 flex-shrink-0'} aria-hidden="true" />
         </Button>
-      </SectionHeader>
+      </HomeSectionHeader>
       <ContractsGrid
         contracts={contracts.slice(0, 4)}
-        cardUIOptions={{ showProbChange: true }}
+        showImageOnTopContract={true}
       />
     </Col>
   )
 }
 
-function DailyMoversSection(props: {
+const DailyMoversSection = memo(function DailyMoversSection(props: {
   data:
     | {
         contracts: CPMMBinaryContract[]
@@ -526,81 +617,87 @@ function DailyMoversSection(props: {
 
   return (
     <Col className="gap-2">
-      <SectionHeader label="Your daily movers" href="/daily-movers" />
+      <HomeSectionHeader label="Your daily movers" href="/daily-movers" />
       <ProfitChangeTable contracts={contracts} metrics={metrics} maxRows={3} />
     </Col>
   )
-}
+})
 
-function ActivitySection() {
+const ActivitySection = memo(function ActivitySection() {
   return (
     <Col>
-      <SectionHeader label="Live feed" href="/live" />
+      <HomeSectionHeader label="Live feed" href="/live" icon="🔴" />
       <ActivityLog count={6} showPills />
     </Col>
   )
-}
+})
 
-export function TrendingGroupsSection(props: {
-  user: User
-  myGroups: Group[]
-  trendingGroups: Group[]
-  className?: string
-}) {
-  const { user, myGroups, trendingGroups, className } = props
+export const TrendingGroupsSection = memo(
+  function TrendingGroupsSection(props: {
+    user: User
+    myGroups: Group[]
+    trendingGroups: Group[]
+    className?: string
+  }) {
+    const { user, myGroups, trendingGroups, className } = props
 
-  const myGroupIds = new Set(myGroups.map((g) => g.id))
+    const myGroupIds = new Set(myGroups.map((g) => g.id))
 
-  const groups = trendingGroups.filter((g) => !myGroupIds.has(g.id))
-  const count = 20
-  const chosenGroups = groups.slice(0, count)
+    const groups = trendingGroups.filter((g) => !myGroupIds.has(g.id))
+    const count = 20
+    const chosenGroups = groups.slice(0, count)
 
-  if (chosenGroups.length === 0) {
-    return null
+    if (chosenGroups.length === 0) {
+      return null
+    }
+
+    return (
+      <Col className={className}>
+        <HomeSectionHeader
+          label="Trending groups"
+          href="/explore-groups"
+          icon="👥"
+        />
+        <div className="mb-4 text-gray-500">
+          Follow groups you are interested in.
+        </div>
+        <Row className="flex-wrap gap-2">
+          {chosenGroups.map((g) => (
+            <PillButton
+              className="flex flex-row items-center gap-1"
+              key={g.id}
+              selected={myGroupIds.has(g.id)}
+              onSelect={() => {
+                if (myGroupIds.has(g.id)) leaveGroup(g, user.id)
+                else {
+                  const homeSections = (user.homeSections ?? [])
+                    .filter((id) => id !== g.id)
+                    .concat(g.id)
+                  updateUser(user.id, { homeSections })
+
+                  toast.promise(joinGroup(g, user.id), {
+                    loading: 'Following group...',
+                    success: `Followed ${g.name}`,
+                    error: "Couldn't follow group, try again?",
+                  })
+
+                  track('home follow group', { group: g.slug })
+                }
+              }}
+            >
+              <PlusCircleIcon
+                className={'h-5 w-5 flex-shrink-0 text-gray-500'}
+                aria-hidden="true"
+              />
+
+              {g.name}
+            </PillButton>
+          ))}
+        </Row>
+      </Col>
+    )
   }
-
-  return (
-    <Col className={className}>
-      <SectionHeader label="Trending groups" href="/explore-groups" />
-      <div className="mb-4 text-gray-500">
-        Follow groups you are interested in.
-      </div>
-      <Row className="flex-wrap gap-2">
-        {chosenGroups.map((g) => (
-          <PillButton
-            className="flex flex-row items-center gap-1"
-            key={g.id}
-            selected={myGroupIds.has(g.id)}
-            onSelect={() => {
-              if (myGroupIds.has(g.id)) leaveGroup(g, user.id)
-              else {
-                const homeSections = (user.homeSections ?? [])
-                  .filter((id) => id !== g.id)
-                  .concat(g.id)
-                updateUser(user.id, { homeSections })
-
-                toast.promise(joinGroup(g, user.id), {
-                  loading: 'Following group...',
-                  success: `Followed ${g.name}`,
-                  error: "Couldn't follow group, try again?",
-                })
-
-                track('home follow group', { group: g.slug })
-              }
-            }}
-          >
-            <PlusCircleIcon
-              className={'h-5 w-5 flex-shrink-0 text-gray-500'}
-              aria-hidden="true"
-            />
-
-            {g.name}
-          </PillButton>
-        ))}
-      </Row>
-    </Col>
-  )
-}
+)
 
 function CustomizeButton(props: { justIcon?: boolean; className?: string }) {
   const { justIcon, className } = props
@@ -612,9 +709,9 @@ function CustomizeButton(props: { justIcon?: boolean; className?: string }) {
       )}
       href="/home/edit"
     >
-      <Button size="lg" color="gray" className={clsx('flex gap-2')}>
-        <AdjustmentsIcon
-          className={clsx('h-[24px] w-5 text-gray-500')}
+      <Button size="xs" color="gray-white">
+        <HomeSettingsIcon
+          className={clsx('h-7 w-7 text-gray-400')}
           aria-hidden="true"
         />
         {!justIcon && 'Customize'}

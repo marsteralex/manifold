@@ -1,14 +1,18 @@
 import { BinaryContract, PseudoNumericContract } from 'common/contract'
 import { Bet } from 'common/bet'
-import { useEffect, useState } from 'react'
 import { partition, sumBy } from 'lodash'
 import { safeLocalStorage } from 'web/lib/util/local'
+import { useEffectCheckEquality } from './use-effect-check-equality'
+import { useStateCheckEquality } from './use-state-check-equality'
 
 export const useSaveBinaryShares = (
   contract: BinaryContract | PseudoNumericContract,
   userBets: Bet[] | undefined
 ) => {
-  const [savedShares, setSavedShares] = useState({ yesShares: 0, noShares: 0 })
+  const [savedShares, setSavedShares] = useStateCheckEquality({
+    yesShares: 0,
+    noShares: 0,
+  })
 
   const [yesBets, noBets] = partition(
     userBets ?? [],
@@ -18,7 +22,7 @@ export const useSaveBinaryShares = (
     ? [sumBy(yesBets, (bet) => bet.shares), sumBy(noBets, (bet) => bet.shares)]
     : [savedShares.yesShares, savedShares.noShares]
 
-  useEffect(() => {
+  useEffectCheckEquality(() => {
     const local = safeLocalStorage()
 
     // Read shares from local storage.

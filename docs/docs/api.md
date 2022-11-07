@@ -555,12 +555,21 @@ Cancel the limit order of a bet with the specified id. If the bet was unfilled, 
 
 Creates a new market on behalf of the authorized user.
 
+Note: this costs mana. If you have insufficient mana, this call will return an error. The cost to create each type of market is:
+
+| Market Type     | Creation Cost |
+|-----------------|---------------|
+| BINARY          | M$50          |
+| PSEUDO_NUMERIC  | M$250         |
+| FREE_RESPONSE   | M$100         |
+| MULTIPLE_CHOICE | M$100         |
+
 Parameters:
 
 - `outcomeType`: Required. One of `BINARY`, `FREE_RESPONSE`, `MULTIPLE_CHOICE`, or `PSEUDO_NUMERIC`.
 - `question`: Required. The headline question for the market.
-- `description`: Required. A long description describing the rules for the market.
-  - Note: string descriptions do **not** turn into links, mentions, formatted text. Instead, rich text descriptions must be in [TipTap json](https://tiptap.dev/guide/output#option-1-json).
+- `description`: Optional. A long description describing the rules for the market.
+  - Note: string descriptions do **not** turn into links, mentions, formatted text. You may instead use `descriptionMarkdown` or `descriptionHtml` for rich text formatting.
 - `closeTime`: Optional. The time at which the market will close, represented as milliseconds since the epoch. Defaults to 7 days from now.
 - `visibility`: Optional. One of `public` (default) or `unlisted`. Controls whether the market is shown on the homepage.
 - `groupId`: Optional. A group to create this market under.

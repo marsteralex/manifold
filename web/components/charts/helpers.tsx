@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useEffect,
+  ComponentType,
 } from 'react'
 import { pointer, select } from 'd3-selection'
 import { Axis, AxisScale } from 'd3-axis'
@@ -58,13 +59,17 @@ export const YAxis = <Y,>(props: { w: number; h: number; axis: Axis<Y> }) => {
       select(axisRef.current)
         .call(axis)
         .call((g) =>
-          g.selectAll('.tick line').attr('x2', w).attr('stroke-opacity', 0.1)
+          g
+            .selectAll('.tick line')
+            .attr('x2', w)
+            .attr('stroke-opacity', 0.1)
+            .attr('transform', `translate(-${w}, 0)`)
         )
         .select('.domain')
         .attr('stroke-width', 0)
     }
   }, [w, h, axis])
-  return <g ref={axisRef} />
+  return <g ref={axisRef} transform={`translate(${w}, 0)`} />
 }
 
 export const LinePath = <P,>(
@@ -251,12 +256,7 @@ export const SVGChart = <X, TT>(props: {
             isMobile ?? false
           )}
         >
-          <Tooltip
-            xScale={xAxis.scale()}
-            x={ttParams.x}
-            y={ttParams.y}
-            data={ttParams.data}
-          />
+          <Tooltip xScale={xAxis.scale()} {...ttParams} />
         </TooltipContainer>
       )}
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
@@ -329,12 +329,18 @@ export const getTooltipPosition = (
   return { left, bottom }
 }
 
-export type TooltipParams<T> = { x: number; y: number; data: T }
+export type TooltipParams<T> = {
+  x: number
+  y: number
+  prev: T | undefined
+  next: T | undefined
+  nearest: T
+}
 export type TooltipProps<X, T> = TooltipParams<T> & {
   xScale: ContinuousScale<X>
 }
 
-export type TooltipComponent<X, T> = React.ComponentType<TooltipProps<X, T>>
+export type TooltipComponent<X, T> = ComponentType<TooltipProps<X, T>>
 export const TooltipContainer = (props: {
   setElem: (e: HTMLElement | null) => void
   pos: TooltipPosition

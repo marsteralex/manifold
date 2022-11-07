@@ -35,6 +35,12 @@ const embedPatterns: EmbedPattern[] = [
     rewrite: (id) =>
       `<iframe src="https://www.youtube.com/embed/${id}"></iframe>`,
   },
+  // Also rewrite youtube links like `https://youtu.be/IOlKZDgyQRQ`
+  {
+    regex: /^https?:\/\/youtu\.be\/([^&]+)/,
+    rewrite: (id) =>
+      `<iframe src="https://www.youtube.com/embed/${id}"></iframe>`,
+  },
   {
     regex: /^https?:\/\/www\.metaculus\.com\/questions\/(\d+)/,
     rewrite: (id) =>
@@ -57,6 +63,12 @@ const embedPatterns: EmbedPattern[] = [
     regex: /^https?:\/\/www\.twitch\.tv\/([^\/]+)/,
     rewrite: (channel) =>
       `<iframe src="https://player.twitch.tv/?channel=${channel}&parent=${DOMAIN}"></iframe>`,
+  },
+  {
+    // Strawpoll: https://strawpoll.com/polls/PbZqoPJelnN
+    regex: /^https?:\/\/strawpoll\.com\/polls\/(\w+)/,
+    rewrite: (id) =>
+      `<iframe src="https://strawpoll.com/embed/polls/${id}"></iframe>`,
   },
   {
     regex: /^(https?:\/\/.*)/,
