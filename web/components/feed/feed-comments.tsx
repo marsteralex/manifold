@@ -11,22 +11,29 @@ import { formatMoney } from 'common/util/format'
 import { Row } from 'web/components/layout/row'
 import { Avatar } from 'web/components/widgets/avatar'
 import { OutcomeLabel } from 'web/components/outcome-label'
-import { CopyLinkDateTimeComponent } from 'web/components/feed/copy-link-date-time'
+import {
+  CopyLinkDateTimeComponent,
+  copyLinkToComment,
+} from 'web/components/feed/copy-link-date-time'
 import { firebaseLogin } from 'web/lib/firebase/users'
 import { createCommentOnContract } from 'web/lib/firebase/comments'
 import { Col } from 'web/components/layout/col'
 import { track } from 'web/lib/service/analytics'
-import { Tipper } from '../widgets/tipper'
 import { CommentTipMap } from 'web/hooks/use-tip-txns'
 import { useEvent } from 'web/hooks/use-event'
 import { Content } from '../widgets/editor'
 import { UserLink } from 'web/components/widgets/user-link'
 import { CommentInput } from '../comments/comment-input'
-import { AwardBountyButton } from 'web/components/buttons/award-bounty-button'
 import { ReplyIcon } from '@heroicons/react/solid'
 import { IconButton } from '../buttons/button'
 import { ReplyToggle } from '../comments/reply-toggle'
-import { ReportButton } from 'web/components/buttons/report-button'
+import { ReportModal } from 'web/components/buttons/report-button'
+import DropdownMenu from 'web/components/comments/dropdown-menu'
+import { toast } from 'react-hot-toast'
+import LinkIcon from 'web/lib/icons/link-icon'
+import { FlagIcon } from '@heroicons/react/outline'
+import { LikeButton } from 'web/components/contract/like-button'
+import { richTextToString } from 'common/util/parse'
 
 export type ReplyTo = { id: string; username: string }
 
@@ -69,7 +76,7 @@ export function FeedCommentThread(props: {
         highlighted={highlightedId === parentComment.id}
         myTip={user ? tips[parentComment.id]?.[user.id] : undefined}
         totalTip={sum(Object.values(tips[parentComment.id] ?? {}))}
-        showTip={true}
+        showLike={true}
         seeReplies={seeReplies}
         numComments={threadComments.length}
         onSeeReplyClick={onSeeRepliesClick}
@@ -84,7 +91,7 @@ export function FeedCommentThread(props: {
             highlighted={highlightedId === comment.id}
             myTip={user ? tips[comment.id]?.[user.id] : undefined}
             totalTip={sum(Object.values(tips[comment.id] ?? {}))}
-            showTip={true}
+            showLike={true}
             onReplyClick={onReplyClick}
           />
         ))}
@@ -106,7 +113,7 @@ export const ParentFeedComment = memo(function ParentFeedComment(props: {
   contract: Contract
   comment: ContractComment
   highlighted?: boolean
-  showTip?: boolean
+  showLike?: boolean
   myTip?: number
   totalTip?: number
   seeReplies: boolean
@@ -120,7 +127,7 @@ export const ParentFeedComment = memo(function ParentFeedComment(props: {
     highlighted,
     myTip,
     totalTip,
-    showTip,
+    showLike,
     onReplyClick,
     onSeeReplyClick,
     seeReplies,
@@ -135,21 +142,22 @@ export const ParentFeedComment = memo(function ParentFeedComment(props: {
     }
   }, [highlighted])
 
-  const [hover, setHover] = useState(false)
   const commentKind =
     userUsername === 'ManifoldDream' ? 'ub-dream-comment' : null
   return (
     <Row
       ref={commentRef}
       id={comment.id}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      className={clsx(commentKind, 'relative ml-3 gap-2')}
+      className={clsx(
+        commentKind,
+        'relative ml-3 gap-2',
+        highlighted ? 'bg-indigo-50' : 'hover:bg-gray-50'
+      )}
     >
-      <Col className="z-20 -ml-3.5">
+      <Col className="-ml-3.5">
         <Avatar size="sm" username={userUsername} avatarUrl={userAvatarUrl} />
       </Col>
-      <Col className="z-20 w-full">
+      <Col className="w-full">
         <FeedCommentHeader comment={comment} contract={contract} />
         <Content size="sm" content={content || text} />
         <Row className="justify-between">
@@ -161,19 +169,13 @@ export const ParentFeedComment = memo(function ParentFeedComment(props: {
           <CommentActions
             onReplyClick={onReplyClick}
             comment={comment}
-            showTip={showTip}
+            showLike={showLike}
             myTip={myTip}
             totalTip={totalTip}
             contract={contract}
           />
         </Row>
       </Col>
-      <div
-        className={clsx(
-          'z-1 absolute -mt-1 -ml-1 h-full w-full rounded-lg transition-colors',
-          highlighted ? 'bg-indigo-50' : hover ? 'bg-greyscale-1' : ''
-        )}
-      />
     </Row>
   )
 })
@@ -181,13 +183,14 @@ export const ParentFeedComment = memo(function ParentFeedComment(props: {
 export function CommentActions(props: {
   onReplyClick?: (comment: ContractComment) => void
   comment: ContractComment
-  showTip?: boolean
+  showLike?: boolean
   myTip?: number
   totalTip?: number
   contract: Contract
 }) {
-  const { onReplyClick, comment, showTip, myTip, totalTip, contract } = props
-
+  const { onReplyClick, comment, showLike, contract } = props
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const user = useUser()
   return (
     <Row className="grow items-center justify-end">
       {onReplyClick && (
@@ -195,19 +198,51 @@ export function CommentActions(props: {
           <ReplyIcon className="h-5 w-5" />
         </IconButton>
       )}
-      {showTip && (
-        <Tipper comment={comment} myTip={myTip ?? 0} totalTip={totalTip ?? 0} />
+      {showLike && (
+        <LikeButton
+          contentCreatorId={comment.userId}
+          contentId={comment.id}
+          user={user}
+          contentType={'comment'}
+          totalLikes={comment.likes ?? 0}
+          contract={contract}
+          contentText={richTextToString(comment.content)}
+        />
       )}
-      {(contract.openCommentBounties ?? 0) > 0 && (
-        <AwardBountyButton comment={comment} contract={contract} />
-      )}
-      <ReportButton
-        contentOwnerId={comment.userId}
-        contentId={comment.id}
-        parentId={contract.id}
-        parentType={'contract'}
-        contentType={'comment'}
-        iconButton={true}
+      <ReportModal
+        report={{
+          contentOwnerId: comment.userId,
+          contentId: comment.id,
+          contentType: 'comment',
+          parentId: contract.id,
+          parentType: 'contract',
+        }}
+        setIsModalOpen={setIsModalOpen}
+        isModalOpen={isModalOpen}
+        label={'Comment'}
+      />
+      <DropdownMenu
+        Items={[
+          {
+            name: 'Copy Link',
+            icon: <LinkIcon className="h-5 w-5" />,
+            onClick: () => {
+              copyLinkToComment(
+                contract.creatorUsername,
+                contract.slug,
+                comment.id
+              )
+            },
+          },
+          {
+            name: 'Report',
+            icon: <FlagIcon className="h-5 w-5" />,
+            onClick: () => {
+              if (user?.id !== comment.userId) setIsModalOpen(true)
+              else toast.error(`You can't report your own comment`)
+            },
+          },
+        ]}
       />
     </Row>
   )
@@ -217,7 +252,7 @@ export const FeedComment = memo(function FeedComment(props: {
   contract: Contract
   comment: ContractComment
   highlighted?: boolean
-  showTip?: boolean
+  showLike?: boolean
   myTip?: number
   totalTip?: number
   onReplyClick?: (comment: ContractComment) => void
@@ -228,7 +263,7 @@ export const FeedComment = memo(function FeedComment(props: {
     highlighted,
     myTip,
     totalTip,
-    showTip,
+    showLike,
     onReplyClick,
   } = props
   const { text, content, userUsername, userAvatarUrl } = comment
@@ -240,37 +275,30 @@ export const FeedComment = memo(function FeedComment(props: {
     }
   }, [highlighted])
 
-  const [hover, setHover] = useState(false)
-
   return (
     <Row
       ref={commentRef}
       id={comment.id}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      className={clsx('relative ml-12 gap-2 ')}
+      className={clsx(
+        'relative ml-12 gap-2 ',
+        highlighted ? 'bg-indigo-50' : 'hover:bg-gray-50'
+      )}
     >
-      <Col className="z-20 -ml-3">
+      <Col className="-ml-3">
         <Avatar size="xs" username={userUsername} avatarUrl={userAvatarUrl} />
       </Col>
-      <Col className="z-20 w-full">
+      <Col className="w-full">
         <FeedCommentHeader comment={comment} contract={contract} />
         <Content className="mt-2 grow" size="sm" content={content || text} />
         <CommentActions
           onReplyClick={onReplyClick}
           comment={comment}
-          showTip={showTip}
+          showLike={showLike}
           myTip={myTip}
           totalTip={totalTip}
           contract={contract}
         />
       </Col>
-      <div
-        className={clsx(
-          'z-1 absolute -mt-1 -ml-1 h-full w-full rounded-lg transition-colors',
-          highlighted ? 'bg-indigo-50' : hover ? 'bg-greyscale-1' : ''
-        )}
-      />
     </Row>
   )
 })
@@ -285,7 +313,7 @@ function CommentStatus(props: {
     <>
       {` predicting `}
       <OutcomeLabel outcome={outcome} contract={contract} truncate="short" />
-      {prob && ' at ' + Math.round(prob * 100) + '%'}
+      {prob && ' at ' + Math.round((prob > 1 ? prob / 100 : prob) * 100) + '%'}
     </>
   )
 }
@@ -302,7 +330,6 @@ export function ContractCommentInput(props: {
   const privateUser = usePrivateUser()
   const { contract, parentAnswerOutcome, parentCommentId, replyTo, className } =
     props
-  const { openCommentBounties } = contract
   async function onSubmitComment(editor: Editor) {
     if (!user) {
       track('sign in to comment')
@@ -312,7 +339,6 @@ export function ContractCommentInput(props: {
       contract.id,
       editor.getJSON(),
       user,
-      !!openCommentBounties,
       parentAnswerOutcome,
       parentCommentId
     )
@@ -344,7 +370,6 @@ export function FeedCommentHeader(props: {
     commenterPositionShares,
     commenterPositionOutcome,
     createdTime,
-    bountiesAwarded,
   } = comment
   const betOutcome = comment.betOutcome
   let bought: string | undefined
@@ -353,12 +378,11 @@ export function FeedCommentHeader(props: {
     bought = comment.betAmount >= 0 ? 'bought' : 'sold'
     money = formatMoney(Math.abs(comment.betAmount))
   }
-  const totalAwarded = bountiesAwarded ?? 0
   return (
     <Row>
-      <div className="text-greyscale-6 mt-0.5 text-sm">
+      <div className="mt-0.5 text-sm text-gray-600">
         <UserLink username={userUsername} name={userName} />{' '}
-        <span className="text-greyscale-4">
+        <span className="text-gray-400">
           {comment.betId == null &&
             commenterPositionProb != null &&
             commenterPositionOutcome != null &&
@@ -393,11 +417,6 @@ export function FeedCommentHeader(props: {
           createdTime={createdTime}
           elementId={comment.id}
         />
-        {totalAwarded > 0 && (
-          <span className=" ml-2 text-sm text-teal-500">
-            +{formatMoney(totalAwarded)}
-          </span>
-        )}
       </div>
     </Row>
   )

@@ -12,7 +12,6 @@ import { Col } from '../layout/col'
 import {
   BinaryContract,
   Contract,
-  CPMMBinaryContract,
   CPMMContract,
   FreeResponseContract,
   MultipleChoiceContract,
@@ -41,12 +40,12 @@ import { Tooltip } from '../widgets/tooltip'
 import { Card } from '../widgets/card'
 import { useContract } from 'web/hooks/use-contracts'
 import { memo, ReactNode } from 'react'
-import { useUserContractBets } from 'web/hooks/use-user-bets'
 import { ProbOrNumericChange } from './prob-change-table'
 import { Spacer } from '../layout/spacer'
 import { useSavedContractMetrics } from 'web/hooks/use-saved-contract-metrics'
 import { DAY_MS } from 'common/util/time'
 import { ContractMetrics } from 'common/calculate-metrics'
+import Image from 'next/image'
 
 export const ContractCard = memo(function ContractCard(props: {
   contract: Contract
@@ -62,6 +61,9 @@ export const ContractCard = memo(function ContractCard(props: {
   showImage?: boolean
   children?: ReactNode
   pinned?: boolean
+  hideQuestion?: boolean
+  hideDetails?: boolean
+  numAnswersFR?: number
 }) {
   const {
     showTime,
@@ -76,9 +78,12 @@ export const ContractCard = memo(function ContractCard(props: {
     showImage,
     children,
     pinned,
+    hideQuestion,
+    hideDetails,
+    numAnswersFR,
   } = props
   const contract = useContract(props.contract.id) ?? props.contract
-  const { isResolved, createdTime } = contract
+  const { isResolved, createdTime, featuredLabel } = contract
   const { question, outcomeType } = contract
   const { resolution } = contract
 
@@ -88,7 +93,6 @@ export const ContractCard = memo(function ContractCard(props: {
     (contract.closeTime || Infinity) < Date.now() || !!resolution
 
   const showBinaryQuickBet =
-    user &&
     !marketClosed &&
     (outcomeType === 'BINARY' || outcomeType === 'PSEUDO_NUMERIC') &&
     !hideQuickBet
@@ -98,26 +102,37 @@ export const ContractCard = memo(function ContractCard(props: {
   return (
     <Card
       className={clsx(
-        'font-readex-pro group relative flex w-full leading-normal',
+        'group relative flex w-full leading-normal',
         hasImage ? 'ub-cover-image' : '',
         className
       )}
     >
       <Col className="relative flex-1 gap-1 pt-2">
-        <Row className="justify-between px-4 ">
-          <AvatarDetails contract={contract} noLink={noLinkAvatar} />
-          <Row className="gap-1">
-            {pinned && <FeaturedPill />}
-            {/* {isNew && <NewContractBadge />} */}
-          </Row>
-        </Row>
-        {/* overlay question on image */}
-        {hasImage && (
-          <div className="relative mb-2">
-            <img
-              className="h-80 w-full object-cover "
-              src={contract.coverImageUrl}
+        {!hideDetails && (
+          <Row className="justify-between px-4 ">
+            <AvatarDetails
+              contract={contract}
+              noLink={noLinkAvatar}
+              className="z-10"
             />
+            <Row className="gap-1">
+              {pinned && <FeaturedPill label={featuredLabel} />}
+              {/* {isNew && <NewContractBadge />} */}
+            </Row>
+          </Row>
+        )}
+        {/* overlay question on image */}
+        {hasImage && !hideQuestion && (
+          <div className="relative mb-2">
+            <div className="relative h-80">
+              <Image
+                fill
+                alt={contract.question}
+                sizes="100vw"
+                className="object-cover"
+                src={contract.coverImageUrl ?? ''}
+              />
+            </div>
             <div className="absolute bottom-0 w-full">
               <div
                 className={clsx(
@@ -133,10 +148,10 @@ export const ContractCard = memo(function ContractCard(props: {
 
         <Col className="gap-1 px-4 pb-1 ">
           {/* question is here if not overlaid on an image */}
-          {!hasImage && (
+          {!hasImage && !hideQuestion && (
             <div
               className={clsx(
-                'break-anywhere text-greyscale-7 text-md pb-2 font-medium',
+                'break-anywhere text-md pb-2 font-medium text-gray-900',
                 questionClass
               )}
             >
@@ -146,7 +161,7 @@ export const ContractCard = memo(function ContractCard(props: {
           {showBinaryQuickBet ? (
             <QuickBet contract={contract} user={user} className="z-10" />
           ) : (
-            <QuickOutcomeView contract={contract} />
+            <QuickOutcomeView contract={contract} numAnswersFR={numAnswersFR} />
           )}
         </Col>
         <Row className={clsx('gap-1 px-4', children ? '' : 'mb-2')}>
@@ -155,6 +170,7 @@ export const ContractCard = memo(function ContractCard(props: {
             showTime={showTime}
             hideGroupLink={hideGroupLink}
           />
+
           {!isNew &&
             (outcomeType === 'BINARY' || outcomeType === 'PSEUDO_NUMERIC') && (
               <ProbOrNumericChange
@@ -174,14 +190,15 @@ export const ContractCard = memo(function ContractCard(props: {
           href={contractPath(contract)}
           onClick={(e) => {
             // Let the browser handle the link click (opens in new tab).
-            if (e.ctrlKey || e.metaKey) return
-
-            e.preventDefault()
-            track('click market card' + (trackingPostfix ?? ''), {
-              slug: contract.slug,
-              contractId: contract.id,
-            })
-            onClick()
+            if (e.ctrlKey || e.metaKey) {
+              track('click market card' + (trackingPostfix ?? ''), {
+                slug: contract.slug,
+                contractId: contract.id,
+              })
+            } else {
+              e.preventDefault()
+              onClick()
+            }
           }}
         />
       ) : (
@@ -206,15 +223,12 @@ export function BinaryResolutionOrChance(props: {
   contract: BinaryContract
   large?: boolean
   className?: string
-  probAfter?: number // 0 to 1
 }) {
-  const { contract, large, className, probAfter } = props
+  const { contract, large, className } = props
   const { resolution } = contract
   const textColor = getTextColor(contract)
 
-  const before = getBinaryProbPercent(contract)
-  const after = probAfter && formatPercent(probAfter)
-  const probChanged = before !== after
+  const prob = getBinaryProbPercent(contract)
 
   return (
     <Col
@@ -236,14 +250,7 @@ export function BinaryResolutionOrChance(props: {
         </Row>
       ) : (
         <>
-          {probAfter && probChanged ? (
-            <div>
-              <span className="text-gray-500 line-through">{before}</span>
-              <span className={textColor}>{after}</span>
-            </div>
-          ) : (
-            <div className={textColor}>{before}</div>
-          )}
+          <div className={textColor}>{prob}</div>
           <div className={clsx(textColor, large ? 'text-xl' : 'text-base')}>
             chance
           </div>
@@ -263,7 +270,7 @@ export function FreeResponseTopAnswer(props: {
 
   return topAnswer ? (
     <AnswerLabel
-      className="!text-greyscale-7 text-md"
+      className="text-md !text-gray-900"
       answer={topAnswer}
       truncate="medium"
     />
@@ -356,7 +363,7 @@ export function PseudoNumericResolutionOrExpectation(props: {
 }) {
   const { contract, className } = props
   const { resolution, resolutionValue, resolutionProbability } = contract
-  const textColor = `text-blue-400`
+  const textColor = `text-gray-900`
 
   const value = resolution
     ? resolutionValue
@@ -393,47 +400,45 @@ export function PseudoNumericResolutionOrExpectation(props: {
   )
 }
 
-export const ContractCardWithPosition = memo(
-  function ContractCardWithPosition(props: {
+export const ContractCardWithPosition = memo(function ContractCardWithPosition(
+  props: {
     contract: CPMMContract
-    noLinkAvatar?: boolean
     showDailyProfit?: boolean
-    className?: string
-    showImage?: boolean
-  }) {
-    const { noLinkAvatar, showDailyProfit, className, showImage } = props
-    const contract = (useContract(props.contract.id) ??
-      props.contract) as CPMMBinaryContract
+  } & Parameters<typeof ContractCard>[0]
+) {
+  const { contract, showDailyProfit, ...contractCardProps } = props
 
-    const user = useUser()
-    const userBets = useUserContractBets(user?.id, contract.id)
-    const metrics = useSavedContractMetrics(contract, userBets)
-
-    return (
-      <ContractCard
+  return (
+    <ContractCard contract={contract} {...contractCardProps}>
+      <ContractMetricsFooter
         contract={contract}
-        noLinkAvatar={noLinkAvatar}
-        showImage={showImage}
-        className={clsx(
-          className,
-          'mb-4 break-inside-avoid-column overflow-hidden'
-        )}
-      >
-        {user && metrics && metrics.hasShares ? (
-          <MetricsFooter
-            contract={contract}
-            metrics={metrics}
-            showDailyProfit={showDailyProfit}
-          />
-        ) : (
-          <Spacer h={2} />
-        )}
-      </ContractCard>
-    )
-  }
-)
+        showDailyProfit={showDailyProfit}
+      />
+    </ContractCard>
+  )
+})
 
-function MetricsFooter(props: {
+export function ContractMetricsFooter(props: {
+  contract: CPMMContract
+  showDailyProfit?: boolean
+}) {
+  const { contract, showDailyProfit } = props
+
+  const user = useUser()
+  const metrics = useSavedContractMetrics(contract)
+
+  return user && metrics && metrics.hasShares ? (
+    <LoadedMetricsFooter
+      contract={contract}
+      metrics={metrics}
+      showDailyProfit={showDailyProfit}
+    />
+  ) : (
+    <Spacer h={2} />
+  )
+}
+
+function LoadedMetricsFooter(props: {
   contract: CPMMContract
   metrics: ContractMetrics
   showDailyProfit?: boolean
@@ -452,12 +457,12 @@ function MetricsFooter(props: {
   return (
     <Row
       className={clsx(
-        'bg-greyscale-1.5 items-center gap-4 pl-4 pr-4 pt-1 pb-2 text-sm'
+        'items-center gap-4 bg-gray-100 pl-4 pr-4 pt-1 pb-2 text-sm'
       )}
     >
       <Col className="w-1/2">
-        <span className="text-greyscale-4 text-xs"> Your position </span>
-        <div className="text-greyscale-6 text-sm">
+        <span className="text-xs text-gray-400"> Your position </span>
+        <div className="text-sm text-gray-600">
           <span className="font-semibold">
             {maxSharesOutcome === 'YES'
               ? formatWithCommas(yesShares)
@@ -468,13 +473,13 @@ function MetricsFooter(props: {
         </div>
       </Col>
       <Col className="w-1/2">
-        <div className="text-greyscale-4 text-xs">
+        <div className="text-xs text-gray-400">
           {' '}
           Your {showDailyProfit ? 'daily' : 'total'} profit{' '}
         </div>
         <div
           className={clsx(
-            'text-greyscale-6 text-sm font-semibold'
+            'text-sm font-semibold text-gray-600'
             // : profit > 0
             // ? 'text-teal-500'
             // : 'text-red-600'
@@ -487,10 +492,11 @@ function MetricsFooter(props: {
   )
 }
 
-export function FeaturedPill() {
+export function FeaturedPill(props: { label?: string }) {
+  const label = props.label ?? 'Featured'
   return (
     <div className="rounded-full bg-gradient-to-br from-indigo-500 to-fuchsia-500 px-2 py-0.5 text-xs text-white">
-      Featured
+      {label}
     </div>
   )
 }

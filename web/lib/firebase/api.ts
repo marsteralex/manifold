@@ -46,14 +46,6 @@ export function addSubsidy(params: any) {
   return call(getFunctionUrl('addsubsidy'), 'POST', params)
 }
 
-export function addCommentBounty(params: any) {
-  return call(getFunctionUrl('addcommentbounty'), 'POST', params)
-}
-
-export function awardCommentBounty(params: any) {
-  return call(getFunctionUrl('awardcommentbounty'), 'POST', params)
-}
-
 export function createMarket(params: any) {
   return call(getFunctionUrl('createmarket'), 'POST', params)
 }
@@ -101,4 +93,8 @@ export function createPost(params: {
   isGroupAboutPost?: boolean
 }) {
   return call(getFunctionUrl('createpost'), 'POST', params)
+}
+
+export function validateIapReceipt(params: any) {
+  return call(getFunctionUrl('validateiap'), 'POST', params)
 }

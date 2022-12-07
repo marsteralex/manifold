@@ -1,8 +1,9 @@
-import { Dictionary, last, partition, sum, sumBy, uniq } from 'lodash'
+import { Dictionary, partition, sumBy, uniq } from 'lodash'
 import { calculatePayout, getContractBetMetrics } from './calculate'
 import { Bet, LimitBet } from './bet'
 import {
   Contract,
+  CPMM2Contract,
   CPMMBinaryContract,
   CPMMContract,
   DPMContract,
@@ -12,6 +13,9 @@ import { DAY_MS } from './util/time'
 import { getBinaryCpmmBetInfo, getNewMultiBetInfo } from './new-bet'
 import { getCpmmProbability } from './calculate-cpmm'
 import { removeUndefinedProps } from './util/object'
+import { buy, getProb, shortSell } from './calculate-cpmm-multi'
+import { average } from './util/math'
+import { ContractMetric } from 'common/contract-metric'
 
 const computeInvestmentValue = (
   bets: Bet[],
@@ -22,7 +26,19 @@ const computeInvestmentValue = (
     if (!contract || contract.isResolved) return 0
     if (bet.sale || bet.isSold) return 0
 
-    const payout = calculatePayout(contract, bet, 'MKT')
+    let payout
+    try {
+      payout = calculatePayout(contract, bet, 'MKT')
+    } catch (e) {
+      console.log(
+        'contract',
+        contract.question,
+        contract.mechanism,
+        contract.id
+      )
+      console.error(e)
+      payout = 0
+    }
     const value = payout - (bet.loanAmount ?? 0)
     if (isNaN(value)) return 0
     return value
@@ -35,7 +51,7 @@ export const computeInvestmentValueCustomProb = (
   p: number
 ) => {
   return sumBy(bets, (bet) => {
-    if (!contract || contract.isResolved) return 0
+    if (!contract) return 0
     if (bet.sale || bet.isSold) return 0
     const { outcome, shares } = bet
 
@@ -48,35 +64,30 @@ export const computeInvestmentValueCustomProb = (
 }
 
 export const computeElasticity = (
-  bets: Bet[],
+  unfilledBets: LimitBet[],
   contract: Contract,
   betAmount = 50
 ) => {
-  const { mechanism, outcomeType } = contract
-  return mechanism === 'cpmm-1' &&
-    (outcomeType === 'BINARY' || outcomeType === 'PSEUDO_NUMERIC')
-    ? computeBinaryCpmmElasticity(bets, contract, betAmount)
-    : computeDpmElasticity(contract, betAmount)
+  switch (contract.mechanism) {
+    case 'cpmm-1':
+      return computeBinaryCpmmElasticity(unfilledBets, contract, betAmount)
+    case 'cpmm-2':
+      return computeCPMM2Elasticity(contract, betAmount)
+    case 'dpm-2':
+      return computeDpmElasticity(contract, betAmount)
+    default: // there are some contracts on the dev DB with crazy mechanisms
+      return 0
+  }
 }
 
 export const computeBinaryCpmmElasticity = (
-  bets: Bet[],
+  unfilledBets: LimitBet[],
   contract: CPMMContract,
   betAmount: number
 ) => {
-  const limitBets = bets
-    .filter(
-      (b) =>
-        !b.isFilled &&
-        !b.isSold &&
-        !b.isRedemption &&
-        !b.sale &&
-        !b.isCancelled &&
-        b.limitProb !== undefined
-    )
-    .sort((a, b) => a.createdTime - b.createdTime) as LimitBet[]
+  const sortedBets = unfilledBets.sort((a, b) => a.createdTime - b.createdTime)
 
-  const userIds = uniq(limitBets.map((b) => b.userId))
+  const userIds = uniq(unfilledBets.map((b) => b.userId))
   // Assume all limit orders are good.
   const userBalances = Object.fromEntries(
     userIds.map((id) => [id, Number.MAX_SAFE_INTEGER])
@@ -87,7 +98,7 @@ export const computeBinaryCpmmElasticity = (
     betAmount,
     contract,
     undefined,
-    limitBets,
+    sortedBets,
     userBalances
   )
   const resultYes = getCpmmProbability(poolY, pY)
@@ -97,7 +108,7 @@ export const computeBinaryCpmmElasticity = (
     betAmount,
     contract,
     undefined,
-    limitBets,
+    sortedBets,
     userBalances
   )
   const resultNo = getCpmmProbability(poolN, pN)
@@ -144,6 +155,26 @@ export const computeBinaryCpmmElasticityFromAnte = (
   return safeYes - safeNo
 }
 
+export const computeCPMM2Elasticity = (
+  contract: CPMM2Contract,
+  betAmount: number
+) => {
+  const { pool, answers } = contract
+
+  const probDiffs = answers.map((a) => {
+    const { newPool: buyPool } = buy(pool, a.id, betAmount)
+    const { newPool: sellPool } = shortSell(pool, a.id, betAmount)
+
+    const buyProb = getProb(buyPool, a.id)
+    const sellProb = getProb(sellPool, a.id)
+    const safeBuy = Number.isFinite(buyProb) ? buyProb : 1
+    const safeSell = Number.isFinite(sellProb) ? sellProb : 0
+    return safeBuy - safeSell
+  })
+
+  return average(probDiffs)
+}
+
 export const computeDpmElasticity = (
   contract: DPMContract,
   betAmount: number
@@ -151,82 +182,33 @@ export const computeDpmElasticity = (
   return getNewMultiBetInfo('', 2 * betAmount, contract).newBet.probAfter
 }
 
-const computeTotalPool = (userContracts: Contract[], startTime = 0) => {
-  const periodFilteredContracts = userContracts.filter(
-    (contract) => contract.createdTime >= startTime
-  )
-  return sum(
-    periodFilteredContracts.map((contract) => sum(Object.values(contract.pool)))
-  )
-}
+export const calculateCreatorTraders = (userContracts: Contract[]) => {
+  let allTimeCreatorTraders = 0
+  let dailyCreatorTraders = 0
+  let weeklyCreatorTraders = 0
+  let monthlyCreatorTraders = 0
 
-export const computeVolume = (contractBets: Bet[], since: number) => {
-  return sumBy(contractBets, (b) =>
-    b.createdTime > since && !b.isRedemption ? Math.abs(b.amount) : 0
-  )
-}
-
-const calculateProbChangeSince = (
-  prob: number,
-  descendingBets: Bet[],
-  since: number
-) => {
-  const newestBet = descendingBets[0]
-  if (!newestBet) return 0
-
-  const betBeforeSince = descendingBets.find((b) => b.createdTime < since)
-
-  if (!betBeforeSince) {
-    const oldestBet = last(descendingBets) ?? newestBet
-    return prob - oldestBet.probBefore
-  }
-
-  return prob - betBeforeSince.probAfter
-}
-
-export const calculateProbChanges = (prob: number, descendingBets: Bet[]) => {
-  const now = Date.now()
-  const yesterday = now - DAY_MS
-  const weekAgo = now - 7 * DAY_MS
-  const monthAgo = now - 30 * DAY_MS
+  userContracts.forEach((contract) => {
+    allTimeCreatorTraders += contract.uniqueBettorCount ?? 0
+    dailyCreatorTraders += contract.uniqueBettors24Hours ?? 0
+    weeklyCreatorTraders += contract.uniqueBettors7Days ?? 0
+    monthlyCreatorTraders += contract.uniqueBettors30Days ?? 0
+  })
 
   return {
-    day: calculateProbChangeSince(prob, descendingBets, yesterday),
-    week: calculateProbChangeSince(prob, descendingBets, weekAgo),
-    month: calculateProbChangeSince(prob, descendingBets, monthAgo),
-  }
-}
-
-export const calculateCreatorVolume = (userContracts: Contract[]) => {
-  const allTimeCreatorVolume = computeTotalPool(userContracts, 0)
-  const monthlyCreatorVolume = computeTotalPool(
-    userContracts,
-    Date.now() - 30 * DAY_MS
-  )
-  const weeklyCreatorVolume = computeTotalPool(
-    userContracts,
-    Date.now() - 7 * DAY_MS
-  )
-
-  const dailyCreatorVolume = computeTotalPool(
-    userContracts,
-    Date.now() - 1 * DAY_MS
-  )
-
-  return {
-    daily: dailyCreatorVolume,
-    weekly: weeklyCreatorVolume,
-    monthly: monthlyCreatorVolume,
-    allTime: allTimeCreatorVolume,
+    daily: dailyCreatorTraders,
+    weekly: weeklyCreatorTraders,
+    monthly: monthlyCreatorTraders,
+    allTime: allTimeCreatorTraders,
   }
 }
 
 export const calculateNewPortfolioMetrics = (
   user: User,
   contractsById: { [k: string]: Contract },
-  currentBets: Bet[]
+  unresolvedBets: Bet[]
 ) => {
-  const investmentValue = computeInvestmentValue(currentBets, contractsById)
+  const investmentValue = computeInvestmentValue(unresolvedBets, contractsById)
   const newPortfolio = {
     investmentValue: investmentValue,
     balance: user.balance,
@@ -275,7 +257,8 @@ export const calculateNewProfit = (
 
 export const calculateMetricsByContract = (
   betsByContractId: Dictionary<Bet[]>,
-  contractsById: Dictionary<Contract>
+  contractsById: Dictionary<Contract>,
+  user: User
 ) => {
   return Object.entries(betsByContractId).map(([contractId, bets]) => {
     const contract = contractsById[contractId]
@@ -292,7 +275,15 @@ export const calculateMetricsByContract = (
       )
     }
 
-    return removeUndefinedProps({ contractId, ...current, from: periodMetrics })
+    return removeUndefinedProps({
+      contractId,
+      ...current,
+      from: periodMetrics,
+      userName: user.name,
+      userId: user.id,
+      userUsername: user.username,
+      userAvatarUrl: user.avatarUrl,
+    } as ContractMetric)
   })
 }
 
@@ -312,10 +303,8 @@ const calculatePeriodProfit = (
     (b) => b.createdTime < fromTime
   )
 
-  const prevProb = contract.prob - contract.probChanges[period]
-  const prob = contract.resolutionProbability
-    ? contract.resolutionProbability
-    : contract.prob
+  const { prob, probChanges } = contract
+  const prevProb = prob - probChanges[period]
 
   const previousBetsValue = computeInvestmentValueCustomProb(
     previousBets,
