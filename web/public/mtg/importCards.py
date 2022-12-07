@@ -8,7 +8,7 @@ import math
 allCategories = ['counterspell', 'beast', 'burn', 'commander', 'artifact']
 specialCategories = ['set', 'basic', 'watermark']
 artist_denylist = '-a%3A"jason+felix"+-a%3A“Harold+McNeill”+-a%3A"Terese+Nielsen"+-a%3A“Noah+Bradley”'
-artist_allowlist = {'David Martin', 'V\u00e9ronique Meignaud', 'Christopher Rush', 'Rebecca Guay', 'DiTerlizzi',
+artist_allowlist = {'David Martin', 'V\u00e9ronique Meignaud', 'Christopher Rush', 'Rebecca Guay', 'DiTerlizzi', 'Mark Tedin',
                     'Anthony Francisco', 'Wylie Beckert', 'Rovina Cai', 'Dominik Mayer', 'Omar Rayyan', 'Thomas M. Baxa'}
 
 
